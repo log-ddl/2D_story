@@ -1,0 +1,239 @@
+// Bối cảnh = composition các module SVG theo lớp độ sâu + phần tử procedural.
+// Tọa độ thế giới 1080×1920 (9:16).
+
+import { SettingSpec, type SettingInput } from "../schema";
+
+const marks5 = (groundY: number) => ({
+  A: { x: 540, y: groundY + 20, scale: 1.55 },
+  B: { x: 225, y: groundY + 110, scale: 1.6 },
+  C: { x: 855, y: groundY + 110, scale: 1.6 },
+  D: { x: 330, y: groundY + 300, scale: 1.8 },
+  E: { x: 750, y: groundY + 300, scale: 1.8 },
+});
+
+const RAW: SettingInput[] = [
+  {
+    id: "throne_room",
+    name: "Điện ngai vàng",
+    tags: ["throne", "palace", "emperor", "court", "ngai", "cung điện", "hoàng đế", "vua"],
+    base_lighting: "day",
+    layers: [
+      {
+        depth: 0.5,
+        fill: "#4b3384",
+        procedural: [
+          { type: "bricks", count: 0, color: "#563c95" },
+          { type: "stars", count: 26, color: "#f7d774", area: [0, 0, 1080, 900] },
+        ],
+        items: [
+          { module: "window_arch", x: 540, y: 820, scale: 1.1, flip: false, rot: 0 },
+          { module: "curtain", x: -20, y: 0, scale: 1, flip: false, rot: 0 },
+          { module: "curtain", x: 1100, y: 0, scale: 1, flip: true, rot: 0 },
+        ],
+      },
+      {
+        depth: 0.8,
+        ground: { y: 1380, color: "#cfae7a", edge: "#a98a58" },
+        procedural: [{ type: "tiles", count: 6, color: "#b8955f" }],
+        items: [
+          { module: "column", x: 120, y: 1400, scale: 1.05, flip: false, rot: 0 },
+          { module: "column", x: 960, y: 1400, scale: 1.05, flip: false, rot: 0 },
+          { module: "carpet", x: 540, y: 1920, scale: 1.25, flip: false, rot: 0 },
+          { module: "throne_giant", x: 540, y: 1500, scale: 1.25, flip: false, rot: 0 },
+        ],
+      },
+    ],
+    marks: {
+      A: { x: 540, y: 1196, scale: 1.5 },
+      B: { x: 210, y: 1600, scale: 1.6 },
+      C: { x: 870, y: 1600, scale: 1.6 },
+      D: { x: 320, y: 1780, scale: 1.8 },
+      E: { x: 760, y: 1780, scale: 1.8 },
+    },
+    text_zone: { x: 540, y: 300 },
+  },
+  {
+    id: "palace_gate",
+    name: "Cổng cung điện",
+    tags: ["door", "gate", "palace", "enter", "cổng", "cửa", "mở"],
+    base_lighting: "day",
+    layers: [
+      { depth: 0.5, fill: "#efe2c4", procedural: [{ type: "bricks", count: 0, color: "#e2d2ae" }], items: [] },
+      {
+        depth: 0.8,
+        ground: { y: 1400, color: "#cfae7a", edge: "#a98a58" },
+        procedural: [{ type: "tiles", count: 6, color: "#b8955f" }],
+        items: [
+          { module: "column", x: 110, y: 1420, scale: 1.05, flip: false, rot: 0 },
+          { module: "column", x: 970, y: 1420, scale: 1.05, flip: false, rot: 0 },
+          { module: "door_open", x: 540, y: 1410, scale: 1.15, flip: false, rot: 0 },
+          { module: "carpet", x: 540, y: 1920, scale: 1.1, flip: false, rot: 0 },
+        ],
+      },
+    ],
+    marks: marks5(1440),
+    text_zone: { x: 540, y: 300 },
+  },
+  {
+    id: "army_camp",
+    name: "Doanh trại",
+    tags: ["army", "camp", "soldier", "tent", "war", "quân", "lính", "trại", "đất"],
+    base_lighting: "day",
+    layers: [
+      {
+        depth: 0.3,
+        sky: ["#8fd0f5", "#e6f6ff"],
+        procedural: [{ type: "clouds", count: 4 }],
+        items: [{ module: "sun", x: 860, y: 330, scale: 1, flip: false, rot: 0 }],
+      },
+      {
+        depth: 0.55,
+        items: [
+          { module: "hill", x: 230, y: 1250, scale: 1.1, flip: false, rot: 0 },
+          { module: "hill", x: 850, y: 1270, scale: 1.2, flip: false, rot: 0 },
+        ],
+      },
+      {
+        depth: 0.8,
+        ground: { y: 1240, color: "#e8c88a", edge: "#c9a46c" },
+        items: [
+          { module: "tent", x: 170, y: 1300, scale: 1, flip: false, rot: 0 },
+          { module: "tent", x: 900, y: 1290, scale: 0.9, flip: false, rot: 0 },
+          { module: "tent", x: 560, y: 1250, scale: 0.7, flip: false, rot: 0 },
+          { module: "standard", x: 360, y: 1330, scale: 1, flip: false, rot: 0 },
+          { module: "standard", x: 740, y: 1320, scale: 0.9, flip: false, rot: 0 },
+        ],
+      },
+    ],
+    marks: marks5(1440),
+    text_zone: { x: 540, y: 520 },
+  },
+  {
+    id: "map_italy",
+    name: "Bản đồ Ý",
+    tags: ["map", "italy", "march", "route", "bản đồ", "hành quân", "ravenna", "rome"],
+    base_lighting: "day",
+    layers: [
+      {
+        depth: 0.4,
+        fill: "#7fb8d8",
+        procedural: [{ type: "waves", count: 18, color: "#9ccbe4" }],
+        items: [],
+      },
+      {
+        depth: 0.8,
+        items: [
+          { module: "map_italy", x: 540, y: 960, scale: 1.0, flip: false, rot: 0 },
+          { module: "mountain_icon", x: 330, y: 650, scale: 0.9, flip: false, rot: 0 },
+          { module: "mountain_icon", x: 430, y: 610, scale: 0.8, flip: false, rot: 0 },
+          { module: "mountain_icon", x: 580, y: 610, scale: 0.8, flip: false, rot: 0 },
+          { module: "mountain_icon", x: 600, y: 880, scale: 0.8, flip: false, rot: 0 },
+          { module: "mountain_icon", x: 680, y: 990, scale: 0.8, flip: false, rot: 0 },
+          { module: "city_marker", x: 560, y: 670, scale: 1, flip: false, rot: 0 },
+          { module: "label:RAVENNA", x: 640, y: 640, scale: 1, flip: false, rot: 0 },
+          { module: "city_marker", x: 485, y: 940, scale: 1, flip: false, rot: 0 },
+          { module: "label:ROMA", x: 400, y: 935, scale: 1, flip: false, rot: 0 },
+          { module: "city_marker", x: 625, y: 1080, scale: 1, flip: false, rot: 0 },
+          { module: "label:NAPOLI", x: 710, y: 1110, scale: 1, flip: false, rot: 0 },
+        ],
+      },
+    ],
+    marks: {
+      A: { x: 540, y: 1800, scale: 0.9 },
+      B: { x: 250, y: 1800, scale: 0.9 },
+      C: { x: 830, y: 1800, scale: 0.9 },
+      D: { x: 360, y: 1880, scale: 1 },
+      E: { x: 720, y: 1880, scale: 1 },
+    },
+    text_zone: { x: 540, y: 260 },
+  },
+  {
+    id: "seaside_villa",
+    name: "Biệt thự ven biển",
+    tags: ["villa", "sea", "beach", "retire", "naples", "biển", "biệt thự", "nghỉ hưu"],
+    base_lighting: "day",
+    layers: [
+      {
+        depth: 0.3,
+        sky: ["#7cc6f2", "#fff3d6"],
+        procedural: [{ type: "clouds", count: 3 }],
+        items: [{ module: "sun", x: 200, y: 360, scale: 1.1, flip: false, rot: 0 }],
+      },
+      {
+        depth: 0.5,
+        ground: { y: 1050, color: "#3d8fc7", edge: "#2f78ab" },
+        procedural: [{ type: "waves", count: 10, color: "#69addb", area: [0, 1050, 1080, 1250] }],
+        items: [],
+      },
+      {
+        depth: 0.8,
+        ground: { y: 1250, color: "#f2d89b", edge: "#d9bb78" },
+        items: [
+          { module: "villa", x: 600, y: 1280, scale: 0.95, flip: false, rot: 0 },
+          { module: "cypress", x: 150, y: 1300, scale: 1.1, flip: false, rot: 0 },
+          { module: "cypress", x: 230, y: 1290, scale: 0.9, flip: false, rot: 0 },
+          { module: "palm", x: 980, y: 1330, scale: 1, flip: false, rot: 0 },
+          { module: "amphora", x: 320, y: 1350, scale: 0.8, flip: false, rot: 0 },
+        ],
+      },
+    ],
+    marks: marks5(1460),
+    text_zone: { x: 540, y: 560 },
+  },
+  {
+    id: "city_walls",
+    name: "Tường thành Ravenna",
+    tags: ["city", "wall", "siege", "ravenna", "fortress", "thành", "vây"],
+    base_lighting: "dusk",
+    layers: [
+      { depth: 0.3, sky: ["#f2a65a", "#ffe3b0"], procedural: [{ type: "clouds", count: 3 }], items: [] },
+      {
+        depth: 0.7,
+        ground: { y: 1300, color: "#c9a46c", edge: "#a98a58" },
+        items: [{ module: "city_wall", x: 540, y: 1320, scale: 0.98, flip: false, rot: 0 }],
+      },
+      { depth: 0.9, items: [{ module: "standard", x: 140, y: 1520, scale: 1, flip: false, rot: 0 }, { module: "bush", x: 960, y: 1500, scale: 1, flip: false, rot: 0 }] },
+    ],
+    marks: marks5(1470),
+    text_zone: { x: 540, y: 380 },
+  },
+  {
+    id: "forum",
+    name: "Quảng trường La Mã",
+    tags: ["rome", "forum", "city", "history", "founder", "la mã", "thành phố", "lịch sử"],
+    base_lighting: "day",
+    layers: [
+      { depth: 0.3, sky: ["#9fd6f5", "#fff6df"], procedural: [{ type: "clouds", count: 3 }], items: [] },
+      {
+        depth: 0.6,
+        items: [
+          { module: "house_block", x: 120, y: 1230, scale: 0.9, flip: false, rot: 0 },
+          { module: "house_block", x: 960, y: 1230, scale: 0.9, flip: true, rot: 0 },
+          { module: "temple_front", x: 540, y: 1230, scale: 1.05, flip: false, rot: 0 },
+        ],
+      },
+      {
+        depth: 0.85,
+        ground: { y: 1220, color: "#e2cfa5", edge: "#c9b48a" },
+        procedural: [{ type: "tiles", count: 5, color: "#cdb589" }],
+        items: [{ module: "amphora", x: 120, y: 1420, scale: 0.9, flip: false, rot: 0 }],
+      },
+    ],
+    marks: marks5(1440),
+    text_zone: { x: 540, y: 330 },
+  },
+  {
+    id: "title_card",
+    name: "Nền tiêu đề",
+    tags: ["title", "question", "intro", "outro", "cta", "tiêu đề", "câu hỏi"],
+    base_lighting: "day",
+    layers: [
+      { depth: 0.3, sky: ["#ffcf6b", "#ff8a5c"], procedural: [{ type: "rays", count: 18, color: "#ffe29a" }], items: [] },
+      { depth: 0.8, ground: { y: 1500, color: "#f5b25f", edge: "#d98f3e" }, items: [] },
+    ],
+    marks: marks5(1520),
+    text_zone: { x: 540, y: 480 },
+  },
+];
+
+export const BUILTIN_SETTINGS: SettingSpec[] = RAW.map((s) => SettingSpec.parse(s));
