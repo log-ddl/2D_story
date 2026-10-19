@@ -3,6 +3,7 @@
 import type { Episode, Scene } from "../schema";
 import type { Library } from "../engine/library";
 import { MAX_SCENE, MIN_SCENE } from "./segment";
+import { resolveTarget } from "../engine/actions";
 
 export function qaScene(ep: Episode, scene: Scene, idx: number, lib: Library): Scene["qa_issues"] {
   const issues: Scene["qa_issues"] = scene.qa_issues.filter((q) => q.level === "info" && q.message.startsWith("Gợi ý"));
@@ -20,6 +21,8 @@ export function qaScene(ep: Episode, scene: Scene, idx: number, lib: Library): S
     if (o.text.length > 32) issues.push({ level: "warn", message: `Chữ quá dài: "${o.text.slice(0, 20)}…"` });
     if (o.at_word != null && (o.at_word < scene.word_start || o.at_word > scene.word_end)) issues.push({ level: "warn", message: `Overlay "${o.text}" gắn vào từ ngoài cảnh` });
   }
+  for (const a of scene.actions) if (!resolveTarget(scene, a.target)) issues.push({ level: "warn", message: `Hành động "${a.verb}" trỏ tới "${a.target}" không có trong cảnh` });
+  for (const a of scene.actions) if (a.at_word != null && (a.at_word < scene.word_start || a.at_word > scene.word_end)) issues.push({ level: "warn", message: `Hành động "${a.verb}" gắn vào từ ngoài cảnh` });
   if (!scene.characters.length && !scene.overlays.length && !scene.props.length && !scene.background.setting.startsWith("map")) issues.push({ level: "info", message: "Cảnh chỉ có nền — cân nhắc thêm nhân vật hoặc chữ" });
   const mism = ep.alignment?.mismatches.filter((m) => m.index >= scene.word_start && m.index <= scene.word_end) ?? [];
   if (mism.length) issues.push({ level: "warn", message: `Giọng đọc lệch kịch bản: ${mism.slice(0, 3).map((m) => `"${m.expected}"→"${m.heard || "∅"}"`).join(", ")}` });

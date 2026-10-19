@@ -1,6 +1,6 @@
 // Backend chạy trong trình duyệt: dữ liệu lưu trong IndexedDB. Không có ffmpeg/say/whisper.
 
-import { DEFAULT_SETTINGS, parseEpisode, parseProject, type Backend } from "./index";
+import { pickSettings, parseEpisode, parseProject, type Backend } from "./index";
 
 const DB = "fxcine";
 const STORE = "kv";
@@ -76,7 +76,7 @@ export function createWebBackend(): Backend {
       });
     },
     async loadSettings() {
-      return { ...DEFAULT_SETTINGS, ...((await get<object>("settings")) ?? {}) };
+      return pickSettings((await get<object>("settings")) ?? {});
     },
     saveSettings: (s) => put("settings", s),
     async capabilities() {

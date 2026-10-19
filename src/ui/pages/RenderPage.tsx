@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Download, TriangleAlert, X } from "lucide-react";
+import { outputSize } from "../../engine/frame";
 import { episodeDuration } from "../../engine/render";
 import { sfxEvents } from "../../pipeline/audio";
 import { useStore } from "../store";
@@ -8,8 +10,8 @@ export function RenderPage() {
   const backend = useStore((s) => s.backend);
   const caps = useStore((s) => s.caps);
   const jobs = useStore((s) => s.jobs);
-  const st = useStore();
-  const [height, setHeight] = useState(1920);
+  const st = useStore.getState();
+  const [short, setShort] = useState(1080);
   const [fps, setFps] = useState(30);
   const [crf, setCrf] = useState(18);
   const [sfx, setSfx] = useState(true);
@@ -34,10 +36,15 @@ export function RenderPage() {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">Độ phân giải</label>
-            <select className="field" value={height} onChange={(e) => setHeight(+e.target.value)}>
-              <option value={1280}>720 × 1280</option>
-              <option value={1920}>1080 × 1920 (Shorts)</option>
-              <option value={3840}>2160 × 3840 (4K)</option>
+            <select className="field" value={short} onChange={(e) => setShort(+e.target.value)}>
+              {[720, 1080, 2160].map((v) => {
+                const [w, h] = outputSize(episode.aspect, v);
+                return (
+                  <option key={v} value={v}>
+                    {w} × {h} {v === 2160 ? "(4K)" : v === 720 ? "(nháp)" : ""}
+                  </option>
+                );
+              })}
             </select>
           </div>
           <div>
@@ -63,7 +70,7 @@ export function RenderPage() {
               </button>
               {episode.music && (
                 <button className="btn" onClick={() => st.updateEpisode((e) => ({ ...e, music: null }))}>
-                  ✕
+                  <X className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
@@ -82,11 +89,11 @@ export function RenderPage() {
           <input type="checkbox" checked={sfx} onChange={(e) => setSfx(e.target.checked)} /> Hiệu ứng âm thanh tự sinh ({sfxEvents(episode).length} tiếng pop/whoosh/ding)
         </label>
         <div className="rounded-lg bg-panel2 p-3 font-mono text-[12px] text-mute">
-          {dur.toFixed(2)}s · {frames} frame · {episode.scenes.length} cảnh · giọng: {episode.audio ? "có" : "không"} · nhạc: {episode.music ? "có" : "không"}
+          khung {episode.aspect} · {dur.toFixed(2)}s · {frames} frame · {episode.scenes.length} cảnh · giọng: {episode.audio ? "có" : "không"} · nhạc: {episode.music ? "có" : "không"}
         </div>
-        {warn > 0 && <div className="text-xs text-warn">⚠ {warn} cảnh còn cảnh báo QA — vẫn xuất được.</div>}
-        <button className="btn-acc justify-center !py-2.5" disabled={!dur || running || (tauri && !caps?.ffmpeg)} onClick={() => void st.exportVideo({ height, fps, subtitles: episode.subtitles, sfx, crf })}>
-          {tauri ? "⬇ Xuất MP4 (H.264 + AAC)" : "⬇ Ghi WebM realtime (bản xem thử)"}
+        {warn > 0 && <div className="flex items-center gap-1.5 text-xs text-warn"><TriangleAlert className="h-3.5 w-3.5" /> {warn} cảnh còn cảnh báo QA — vẫn xuất được.</div>}
+        <button className="btn-acc justify-center !py-2.5" disabled={!dur || running || (tauri && !caps?.ffmpeg)} onClick={() => void st.exportVideo({ short, fps, subtitles: episode.subtitles, sfx, crf })}>
+          <Download className="h-4 w-4" /> {tauri ? "Xuất MP4 (H.264 + AAC)" : "Ghi WebM realtime (bản xem thử)"}
         </button>
         {tauri && !caps?.ffmpeg && <div className="text-xs text-bad">Không tìm thấy ffmpeg — cài bằng `brew install ffmpeg` hoặc chỉ đường dẫn trong Cài đặt.</div>}
         <button className="btn justify-center" disabled={!episode.alignment} onClick={downloadSrt}>

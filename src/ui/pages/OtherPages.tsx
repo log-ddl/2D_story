@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { episodeDuration } from "../../engine/render";
 import { useStore } from "../store";
 
@@ -6,7 +6,7 @@ export function OverviewPage() {
   const projects = useStore((s) => s.projects);
   const project = useStore((s) => s.project);
   const episode = useStore((s) => s.episode);
-  const st = useStore();
+  const st = useStore.getState();
   const [name, setName] = useState("");
   const [epTitle, setEpTitle] = useState("");
 
@@ -71,16 +71,19 @@ export function OverviewPage() {
         <h3 className="mb-2 font-semibold text-ink">Quy trình</h3>
         <ol className="list-decimal pl-5">
           <li>
-            <b className="text-ink">Kịch bản</b>: dán kịch bản, nhập file giọng đọc (hoặc đọc bằng giọng máy), bấm Phân tích.
+            <b className="text-ink">Kịch bản</b>: dán kịch bản, chọn khung hình (9:16, 16:9, 1:1, 4:5), nhập giọng đọc hoặc đọc bằng giọng máy.
           </li>
           <li>
-            <b className="text-ink">Phân cảnh</b>: xem lưới cảnh, chỉnh bối cảnh/nhân vật/camera/chữ; kéo ranh giới trên timeline để dời điểm cắt.
+            <b className="text-ink">Nhân vật &amp; Bối cảnh</b>: bộ não (CLI claude / codex / agy) đọc kịch bản, chọn hoặc tạo nhân vật, bối cảnh, tông màu, kiểu phụ đề. Lưu vào dự án để tập sau dùng lại.
           </li>
           <li>
-            <b className="text-ink">Đạo diễn</b>: xem toàn tập 60fps khớp giọng đọc.
+            <b className="text-ink">Phân cảnh</b>: khớp giọng từng từ, chia cảnh theo nghĩa, chỉnh từng cảnh.
           </li>
           <li>
-            <b className="text-ink">Dựng &amp; Xuất</b>: xuất MP4 9:16 kèm phụ đề, SFX, nhạc nền.
+            <b className="text-ink">Tinh chỉnh</b>: xem toàn tập, kéo điểm cắt trên timeline.
+          </li>
+          <li>
+            <b className="text-ink">Xuất</b>: MP4 kèm phụ đề, hiệu ứng âm thanh, nhạc nền.
           </li>
         </ol>
         <p className="mt-2">Phím tắt: ⌘K bảng lệnh · Space phát/dừng · ⌘Z / ⇧⌘Z hoàn tác · ←/→ đổi cảnh.</p>
@@ -94,7 +97,36 @@ export function SettingsPage() {
   const caps = useStore((s) => s.caps);
   const backend = useStore((s) => s.backend);
   const saveSettings = useStore((s) => s.saveSettings);
+  const brains = useStore((s) => s.brains);
   const [draft, setDraft] = useState(settings);
+  useEffect(() => setDraft(settings), [settings]);
+  const [testing, setTesting] = useState(false);
+  const [models, setModels] = useState<{ id: string; label: string }[]>([]);
+  const modelKey = `${draft.brainCli}Model` as "claudeModel" | "codexModel" | "agyModel";
+  useEffect(() => {
+    setModels([]);
+    backend?.brainModels?.(draft.brainCli, draft).then((list) => {
+      setModels(list);
+      // chưa chọn model → chọn sẵn model mới nhất
+      if (list.length) setDraft((d) => (d[`${d.brainCli}Model` as typeof modelKey] ? d : { ...d, [`${d.brainCli}Model`]: list[0].id }));
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.brainCli, backend]);
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const testBrain = async () => {
+    setTesting(true);
+    setTestResult(null);
+    await saveSettings(draft);
+    const t0 = performance.now();
+    try {
+      const out = await backend!.brainRun!('Trả về JSON {"ok": true, "who": "<tên model của bạn>"}.', JSON.stringify({ type: "object", properties: { ok: { type: "boolean" }, who: { type: "string" } }, required: ["ok", "who"], additionalProperties: false }), draft);
+      const v = JSON.parse(out);
+      setTestResult({ ok: true, text: `OK: ${draft.brainCli} trả lời sau ${((performance.now() - t0) / 1000).toFixed(1)}s (${v.who})` });
+    } catch (e) {
+      setTestResult({ ok: false, text: String((e as Error)?.message ?? e).slice(0, 220) });
+    }
+    setTesting(false);
+  };
   const field = (k: keyof typeof draft, label: string, opts: { type?: string; placeholder?: string; hint?: string } = {}) => (
     <div>
       <label className="label">{label}</label>
@@ -105,9 +137,43 @@ export function SettingsPage() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5 p-6">
       <section className="card flex flex-col gap-3 p-5">
-        <h2 className="text-lg font-bold">Claude (Anthropic)</h2>
-        {field("anthropicKey", "API key", { type: "password", placeholder: "sk-ant-…", hint: "Lưu cục bộ trên máy này. Dùng để chia cảnh, dịch, vẽ module SVG và soi khung hình." })}
-        {field("model", "Model", { hint: "Mặc định claude-opus-5-5." })}
+        <h2 className="text-lg font-bold">Bộ não (CLI AI)</h2>
+        <p className="text-[12px] text-mute">fxcine gọi CLI đã cài và đăng nhập trên máy bạn ở chế độ không tương tác — không cần API key trong app. Bộ não lập dàn nhân vật/bối cảnh, chia cảnh, vẽ module SVG và dịch.</p>
+        <div className="grid grid-cols-3 gap-2">
+          {(["claude", "codex", "agy"] as const).map((c) => (
+            <button key={c} onClick={() => setDraft({ ...draft, brainCli: c })} className={`rounded-lg border p-3 text-left ${draft.brainCli === c ? "border-acc bg-acc/10" : "border-line"}`}>
+              <div className="font-semibold">{c === "claude" ? "Claude Code" : c === "codex" ? "Codex" : "Antigravity (agy)"}</div>
+              <div className={`mt-1 truncate font-mono text-[10.5px] ${brains?.[c] ? "text-ok" : "text-dim"}`}>{brains?.[c] ?? "chưa tìm thấy"}</div>
+            </button>
+          ))}
+        </div>
+        {field("claudePath", "Đường dẫn claude (bỏ trống = tự dò)", { placeholder: "~/.local/bin/claude" })}
+        {field("codexPath", "Đường dẫn codex (bỏ trống = tự dò)", { placeholder: "/opt/homebrew/bin/codex" })}
+        {field("agyPath", "Đường dẫn agy (bỏ trống = tự dò)", { placeholder: "~/.local/bin/agy" })}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Model của {draft.brainCli}</label>
+            {models.length ? (
+              <select className="field" value={draft[modelKey]} onChange={(e) => setDraft({ ...draft, [modelKey]: e.target.value })}>
+                {!models.some((m) => m.id === draft[modelKey]) && <option value={draft[modelKey]}>{draft[modelKey] || "Mặc định của CLI"}</option>}
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input className="field" placeholder="để trống = mặc định của CLI" value={draft[modelKey]} onChange={(e) => setDraft({ ...draft, [modelKey]: e.target.value })} />
+            )}
+          </div>
+          {field("brainTimeout", "Giới hạn thời gian (giây)", { type: "number" })}
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="btn" disabled={testing || backend?.kind !== "tauri"} onClick={() => void testBrain()}>
+            {testing ? "Đang thử…" : "Thử bộ não"}
+          </button>
+          {testResult && <span className={`text-xs ${testResult.ok ? "text-ok" : "text-bad"}`}>{testResult.text}</span>}
+        </div>
       </section>
       <section className="card flex flex-col gap-3 p-5">
         <h2 className="text-lg font-bold">Công cụ cục bộ</h2>

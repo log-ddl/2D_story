@@ -1,21 +1,22 @@
 import { create } from "zustand";
-import { getBackend, newId, DEFAULT_SETTINGS, type AppSettings, type Backend, type Capabilities, type ProjectMeta } from "../backend";
-import { llmSegment, llmSvg, llmTranslate, llmVisionQa } from "../backend/llm";
+import { getBackend, newId, DEFAULT_SETTINGS, type AppSettings, type Backend, type BrainTools, type Capabilities, type ProjectMeta } from "../backend";
+import { applyCast, drawCharacterSvg, drawModuleSvg, proposeCast, scopedLibrary, segmentScenes, translateLines, type BrainRunner } from "../brain";
+import { lintRig } from "../engine/character";
+import { compileModule } from "../engine/svg";
+import { outputSize } from "../engine/frame";
 import { EXPRESSIONS, POSES } from "../engine/character";
 import { Library } from "../engine/library";
-import { episodeDuration, renderFrame, renderScene } from "../engine/render";
-import { lintModule } from "../engine/svg";
+import { episodeDuration, renderFrame } from "../engine/render";
 import { subtitleChunks } from "../engine/text";
 import { DEMO_CAST, DEMO_SCRIPT, DEMO_TITLE } from "../library/demo";
-import { BUILTIN_MODULES } from "../library/modules";
 import { alignScriptToAsr, envelopeFromPcm, estimateAlignment, heuristicAlign, parseWhisperJson } from "../pipeline/align";
 import { buildSfxTrack, buildSrt, encodeWav, waveformPeaks } from "../pipeline/audio";
 import { runQa } from "../pipeline/qa";
-import { buildSegmentPrompt, LlmResult, retime, ruleSegment, scenesFromLlm, scriptWordCount } from "../pipeline/segment";
-import { Episode, Project, type Scene } from "../schema";
+import { retime, ruleSegment, scenesFromLlm, scriptWordCount } from "../pipeline/segment";
+import { CharacterSpec, Episode, Project, type Scene } from "../schema";
 import { clock } from "./clock";
 
-export type Page = "overview" | "script" | "storyboard" | "director" | "render" | "library" | "settings";
+export type Page = "overview" | "script" | "cast" | "storyboard" | "director" | "render" | "library" | "settings";
 
 export interface Job {
   id: string;
@@ -44,6 +45,7 @@ interface State {
   backend: Backend | null;
   settings: AppSettings;
   caps: Capabilities | null;
+  brains: BrainTools | null;
   projects: ProjectMeta[];
   project: Project | null;
   episode: Episode | null;
@@ -80,14 +82,16 @@ interface State {
   sayVoice(): Promise<void>;
   clearVoice(): void;
   importMusic(): Promise<void>;
-  analyze(method: "rule" | "llm"): Promise<void>;
+  analyze(method: "rule" | "brain"): Promise<void>;
+  proposeCast(): Promise<void>;
+  cancelBrain(): Promise<void>;
   realign(): Promise<void>;
   translate(): Promise<void>;
   qa(): void;
-  visionQa(sceneId: string): Promise<void>;
-  exportVideo(opts: { height: number; fps: number; subtitles: boolean; sfx: boolean; crf: number }): Promise<void>;
+  exportVideo(opts: { short: number; fps: number; subtitles: boolean; sfx: boolean; crf: number }): Promise<void>;
   exportSrt(): string;
-  generateModule(prompt: string): Promise<void>;
+  generateModule(prompt: string, kind?: "prop" | "headwear" | "hand"): Promise<void>;
+  generateCharacter(description: string, existingId?: string): Promise<string | null>;
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -157,15 +161,19 @@ export const useStore = create<State>((set, get) => {
     clock.duration = ep ? episodeDuration(ep) : 0;
   };
 
-  const settingsOk = () => {
-    const s = get().settings;
-    return { apiKey: s.anthropicKey, model: s.model };
+  /** Chạy một lượt bộ não qua CLI đang chọn */
+  const runner = (): BrainRunner => {
+    const { backend, settings } = get();
+    if (!backend?.brainRun) throw new Error("Bộ não (CLI) chỉ có trên app desktop");
+    return (prompt, schema) => backend.brainRun!(prompt, schema, settings);
   };
+  const brainName = () => get().settings.brainCli;
 
   return {
     backend: null,
     settings: DEFAULT_SETTINGS,
     caps: null,
+    brains: null,
     projects: [],
     project: null,
     episode: null,
@@ -187,6 +195,23 @@ export const useStore = create<State>((set, get) => {
       const settings = await backend.loadSettings();
       set({ backend, settings });
       backend.capabilities(settings).then((caps) => set({ caps })).catch(() => {});
+      backend.brainDetect?.(settings).then((brains) => {
+        set({ brains });
+        // CLI đang chọn không có mà CLI khác có → tự chuyển
+        const cur = get().settings;
+        if (!brains[cur.brainCli]) {
+          const alt = (["claude", "agy", "codex"] as const).find((c) => brains[c]);
+          if (alt) void get().saveSettings({ ...cur, brainCli: alt });
+        }
+        // chọn sẵn model mới nhất cho CLI chưa đặt model (agy/codex liệt kê động)
+        for (const cli of ["agy", "codex"] as const) {
+          const key = `${cli}Model` as const;
+          if (!brains[cli] || get().settings[key]) continue;
+          backend.brainModels?.(cli, get().settings).then((list) => {
+            if (list.length && !get().settings[key]) void get().saveSettings({ ...get().settings, [key]: list[0].id });
+          }).catch(() => {});
+        }
+      }).catch(() => {});
       let projects = await backend.listProjects();
       if (!projects.length) {
         await get().createProject("Lịch sử La Mã", true);
@@ -215,6 +240,7 @@ export const useStore = create<State>((set, get) => {
       set({ settings: s });
       await backend?.saveSettings(s);
       backend?.capabilities(s).then((caps) => set({ caps }));
+      backend?.brainDetect?.(s).then((brains) => set({ brains }));
     },
 
     async createProject(name, demo = false) {
@@ -377,7 +403,7 @@ export const useStore = create<State>((set, get) => {
       const { episode, library, audio, backend, project, settings } = get();
       if (!episode || !project) return;
       if (!episode.script_text.trim()) return get().toast("warn", "Hãy nhập kịch bản trước");
-      const j = job(method === "llm" ? "Khớp giọng + chia cảnh (Claude)" : "Khớp giọng + chia cảnh (offline)");
+      const j = job(method === "brain" ? `Khớp giọng + chia cảnh (${brainName()})` : "Khớp giọng + chia cảnh (offline)");
       try {
         j.progress(0.1, "Căn thời gian từng từ…");
         let alignment;
@@ -390,20 +416,20 @@ export const useStore = create<State>((set, get) => {
           }
         }
         if (!alignment) alignment = audio ? heuristicAlign(episode.script_text, audio.envelope, audio.duration) : estimateAlignment(episode.script_text);
-        j.progress(0.35, `${alignment.words.length} từ · ${alignment.method}`);
+        j.progress(0.3, `${alignment.words.length} từ · ${alignment.method}`);
+        const scoped = scopedLibrary(library, episode);
         let scenes: Scene[];
-        if (method === "llm") {
-          const { system, user } = buildSegmentPrompt(alignment.words, library, Object.keys(POSES), Object.keys(EXPRESSIONS));
+        if (method === "brain") {
           try {
-            const raw = await llmSegment(settingsOk(), system, user, (n) => j.progress(Math.min(0.9, 0.35 + n / 40000), `Claude đang viết… ${n} ký tự`));
-            const res = scenesFromLlm(LlmResult.parse(raw), alignment, episode.fps, library, Object.keys(POSES), Object.keys(EXPRESSIONS));
+            j.progress(0.4, `${brainName()} đang chia cảnh… (có thể mất 1–3 phút)`);
+            const res = scenesFromLlm(await segmentScenes(runner(), alignment.words, library, episode), alignment, episode.fps, scoped, Object.keys(POSES), Object.keys(EXPRESSIONS));
             scenes = res.scenes;
             if (res.warnings.length) get().toast("warn", res.warnings.slice(0, 3).join(" · "));
           } catch (e) {
-            get().toast("warn", `Claude lỗi (${(e as Error).message}) — dùng chia cảnh offline`);
-            scenes = ruleSegment(episode, alignment, library);
+            get().toast("warn", `Bộ não lỗi (${(e as Error).message}) — dùng chia cảnh offline`);
+            scenes = ruleSegment(episode, alignment, scoped);
           }
-        } else scenes = ruleSegment(episode, alignment, library);
+        } else scenes = ruleSegment(episode, alignment, scoped);
         get().updateEpisode((e) => runQa({ ...e, alignment, scenes }, library));
         set({ selected: scenes[0]?.id ?? null });
         j.done(`${scenes.length} cảnh · ${episodeDuration(get().episode!).toFixed(1)}s`);
@@ -411,6 +437,33 @@ export const useStore = create<State>((set, get) => {
       } catch (e) {
         j.fail(e);
       }
+    },
+
+    async proposeCast() {
+      const { episode, project, library } = get();
+      if (!episode || !project) return;
+      if (!episode.script_text.trim()) return get().toast("warn", "Hãy nhập kịch bản trước");
+      const j = job(`${brainName()} lập dàn nhân vật + bối cảnh`);
+      try {
+        j.progress(0.2, "Đang đọc kịch bản… (có thể mất 1–3 phút)");
+        const proposal = await proposeCast(runner(), episode.script_text, library, episode.aspect, episode.brief);
+        const r = applyCast(proposal, project, episode, library);
+        get().updateProject(() => r.project);
+        get().updateEpisode(() => r.episode);
+        // nhân vật không dựng được bằng tham số (con vật, robot…) → bộ não vẽ SVG có khung xương
+        for (const d of r.toDraw) {
+          j.progress(0.8, `Vẽ nhân vật ${d.id}…`);
+          await get().generateCharacter(d.visual, d.id);
+        }
+        j.done(`${r.episode.cast.length} nhân vật (${r.created.characters} mới) · ${r.episode.sets.length} bối cảnh (${r.created.settings} mới)`);
+        get().toast("ok", `Đề xuất xong: ${r.episode.cast.length} nhân vật, ${r.episode.sets.length} bối cảnh — xem và chỉnh trước khi chia cảnh`);
+      } catch (e) {
+        j.fail(e);
+      }
+    },
+
+    async cancelBrain() {
+      await get().backend?.brainCancel?.();
     },
 
     async realign() {
@@ -431,7 +484,7 @@ export const useStore = create<State>((set, get) => {
       if (!episode?.scenes.length) return;
       const j = job("Dịch lời dẫn sang tiếng Việt");
       try {
-        const vi = await llmTranslate(settingsOk(), episode.scenes.map((s) => s.narration));
+        const vi = await translateLines(runner(), episode.scenes.map((s) => s.narration));
         get().updateEpisode((e) => ({ ...e, scenes: e.scenes.map((s, i) => ({ ...s, narration_vi: vi[i] ?? s.narration_vi })) }));
         j.done();
       } catch (e) {
@@ -448,36 +501,12 @@ export const useStore = create<State>((set, get) => {
       get().toast(n ? "warn" : "ok", n ? `${n} cảnh có cảnh báo` : "Tất cả cảnh đều ổn");
     },
 
-    async visionQa(sceneId) {
-      const { episode, library, audio } = get();
-      const scene = episode?.scenes.find((s) => s.id === sceneId);
-      if (!episode || !scene) return;
-      const j = job(`Claude soi khung hình ${scene.id}`);
-      try {
-        const c = document.createElement("canvas");
-        c.width = 540;
-        c.height = 960;
-        renderScene(c.getContext("2d")!, { library, episode, envelope: audio?.envelope }, scene, scene.duration * 0.6, { width: 540, height: 960, subtitles: true });
-        const b64 = c.toDataURL("image/png").split(",")[1];
-        const r = await llmVisionQa(settingsOk(), b64, scene.description, scene.narration);
-        get().updateScene(sceneId, (s) => ({
-          ...s,
-          qa_issues: [...s.qa_issues.filter((q) => !q.message.startsWith("Claude:")), ...r.issues.map((m) => ({ level: "warn" as const, message: `Claude: ${m}` }))],
-          status: r.ok ? s.status : "warning",
-        }));
-        j.done(r.ok ? "Ổn" : `${r.issues.length} vấn đề`);
-      } catch (e) {
-        j.fail(e);
-      }
-    },
-
     async exportVideo(opts) {
       const { episode, library, audio, backend, project, settings } = get();
       if (!episode || !project || !backend) return;
       const duration = episodeDuration(episode);
       if (!duration) return get().toast("warn", "Tập chưa có cảnh");
-      const height = opts.height;
-      const width = Math.round((height * 9) / 16 / 2) * 2;
+      const [width, height] = outputSize(episode.aspect, opts.short);
       const env = { library, episode, envelope: audio?.envelope, createCanvas: (w: number, h: number) => Object.assign(document.createElement("canvas"), { width: w, height: h }) };
       const canvas = Object.assign(document.createElement("canvas"), { width, height });
       const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
@@ -568,37 +597,52 @@ export const useStore = create<State>((set, get) => {
       return buildSrt(ep, subtitleChunks(ep.alignment.words, 0, ep.alignment.words.length - 1));
     },
 
-    async generateModule(prompt) {
+    async generateCharacter(description, existingId) {
+      const { project } = get();
+      if (!project) return null;
+      const j = job(`${brainName()} vẽ nhân vật: ${description.slice(0, 30)}`);
+      try {
+        j.progress(0.3, "Đang vẽ nhân vật có khung xương… (1–2 phút)");
+        const check = (svg: string) => {
+          try {
+            return lintRig(compileModule("check", svg));
+          } catch (e) {
+            return [(e as Error).message];
+          }
+        };
+        const r = await drawCharacterSvg(runner(), description, check);
+        const ok = r.errors.length === 0;
+        const modId = `${(existingId ?? r.id).replace(/[^a-z0-9_]/gi, "_").toLowerCase()}_rig`;
+        const charId = existingId ?? r.id.replace(/[^a-z0-9_]/gi, "_").toLowerCase();
+        get().updateProject((p) => {
+          const prev = p.characters.find((c) => c.id === charId);
+          const spec = CharacterSpec.parse({ ...(prev ?? {}), id: charId, name: prev?.name ?? r.name, aliases: [...new Set([...(prev?.aliases ?? []), ...r.aliases.map((a) => a.toLowerCase())])], kind: "svg", rig: modId });
+          return {
+            ...p,
+            modules: [...p.modules.filter((m) => m.id !== modId), { id: modId, svg: r.svg, tags: ["rig", charId], status: ok ? "approved" : "draft", kind: "rig" }],
+            characters: [...p.characters.filter((c) => c.id !== charId), spec],
+          };
+        });
+        j.done(ok ? "Khung xương hợp lệ" : `Còn lỗi: ${r.errors.slice(0, 2).join("; ")}`);
+        get().toast(ok ? "ok" : "warn", ok ? `Đã vẽ nhân vật ${charId}` : `Nhân vật ${charId} còn lỗi khung xương — xem ở Thư viện › Module`);
+        return charId;
+      } catch (e) {
+        j.fail(e);
+        return null;
+      }
+    },
+
+    async generateModule(prompt, kind = "prop") {
       const { project } = get();
       if (!project) return;
-      const j = job(`AI vẽ module: ${prompt.slice(0, 30)}`);
-      const examples = BUILTIN_MODULES.filter((m) => ["coin_pile", "tent", "amphora", "chest"].includes(m.id))
-        .map((m) => `<!-- ${m.id} -->\n${m.svg}`)
-        .join("\n\n");
-      const system = `Bạn là họa sĩ vector vẽ module SVG cho thư viện hoạt hình chibi.
-QUY ƯỚC BẮT BUỘC:
-- Chỉ dùng <svg>, <g>, <path>, <rect>, <circle>, <ellipse>, <polygon>, <polyline>, <line>. Không <text>, <image>, gradient, filter, script.
-- Viền ngoài stroke="#2b2233", stroke-width 5–7, stroke-linejoin="round". Màu phẳng, tươi, 3–6 màu.
-- viewBox quanh vật thể, gốc đặt ở đáy giữa (vật đứng trên mặt đất) hoặc khai báo data-anchor="x y".
-- Kích thước cỡ 150–600 đơn vị; ít hơn 120 phần tử; hình khối tròn trịa, dễ thương.
-- id: snake_case tiếng Anh. tags: 3–6 từ khóa (Anh + Việt).
-Trả về JSON {id, tags, svg, notes}.`;
-      let user = `Vẽ: ${prompt}\n\nVí dụ module đúng style:\n${examples}`;
+      const j = job(`${brainName()} vẽ module: ${prompt.slice(0, 30)}`);
       try {
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const r = await llmSvg(settingsOk(), system, user, (n) => j.progress(Math.min(0.9, n / 6000), `${n} ký tự`));
-          const issues = lintModule(r.svg);
-          const errors = issues.filter((i) => i.level === "error");
-          if (errors.length && attempt === 0) {
-            user += `\n\nBản trước lỗi: ${errors.map((e) => e.message).join("; ")}. Sửa lại.`;
-            continue;
-          }
-          const id = project.modules.some((m) => m.id === r.id) ? `${r.id}_${Date.now().toString(36).slice(-3)}` : r.id;
-          get().updateProject((p) => ({ ...p, modules: [...p.modules, { id, svg: r.svg, tags: r.tags, status: "draft" }] }));
-          j.done(issues.length ? `${issues.length} lưu ý style` : "Sạch lỗi");
-          get().toast(errors.length ? "warn" : "ok", errors.length ? `Module ${id} còn lỗi — xem trước khi duyệt` : `Đã vẽ module ${id} — chờ duyệt`);
-          return;
-        }
+        j.progress(0.3, "Đang vẽ…");
+        const r = await drawModuleSvg(runner(), prompt, kind);
+        const id = project.modules.some((m) => m.id === r.id) ? `${r.id}_${Date.now().toString(36).slice(-3)}` : r.id;
+        get().updateProject((p) => ({ ...p, modules: [...p.modules, { id, svg: r.svg, tags: r.tags, status: "draft", kind }] }));
+        j.done(r.errors.length ? `${r.errors.length} lỗi linter` : "Sạch lỗi");
+        get().toast(r.errors.length ? "warn" : "ok", r.errors.length ? `Module ${id} còn lỗi — xem trước khi duyệt` : `Đã vẽ module ${id} — chờ duyệt`);
       } catch (e) {
         j.fail(e);
       }

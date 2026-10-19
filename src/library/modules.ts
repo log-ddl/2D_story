@@ -9,7 +9,7 @@ const S = `stroke="${O}" stroke-width="6" stroke-linejoin="round" stroke-linecap
 export interface ModuleDef {
   id: string;
   label: string;
-  kind: "headwear" | "hand" | "prop" | "scenery" | "map";
+  kind: "headwear" | "hand" | "prop" | "scenery" | "map" | "rig";
   tags: string[];
   svg: string;
 }
@@ -86,6 +86,90 @@ export const BUILTIN_MODULES: ModuleDef[] = [
     </g></svg>`,
   },
 
+  // ───────── Module hiện đại / đa năng ─────────
+  { id: "desk", label: "Bàn làm việc", kind: "prop", tags: ["desk", "office", "school", "bàn"], svg: `<svg viewBox="-220 -200 440 200"><g ${S}>
+      <rect x="-210" y="-190" width="420" height="34" rx="8" fill="#b07a4a"/>
+      <rect x="-190" y="-156" width="30" height="156" fill="#8a5a33"/><rect x="160" y="-156" width="30" height="156" fill="#8a5a33"/>
+      <rect x="40" y="-156" width="110" height="90" fill="#a06a3c"/><circle cx="95" cy="-110" r="7" fill="#f2c14e"/></g></svg>` },
+  { id: "chair", label: "Ghế", kind: "prop", tags: ["chair", "ghế"], svg: `<svg viewBox="-80 -230 160 230"><g ${S}>
+      <rect x="-60" y="-226" width="120" height="110" rx="18" fill="#4aa3df"/><rect x="-66" y="-120" width="132" height="30" rx="10" fill="#3d87bb"/>
+      <rect x="-56" y="-92" width="16" height="92" fill="#5b6876"/><rect x="40" y="-92" width="16" height="92" fill="#5b6876"/></g></svg>` },
+  { id: "laptop", label: "Laptop", kind: "prop", tags: ["laptop", "computer", "máy tính"], svg: `<svg viewBox="-110 -140 220 140"><g ${S}>
+      <path d="M-80 -136 H80 L76 -26 H-76 Z" fill="#5b6876"/><rect x="-66" y="-122" width="132" height="84" rx="4" fill="#7cc6f2"/>
+      <path d="M-104 -26 H104 L94 0 H-94 Z" fill="#9aa7b4"/></g></svg>` },
+  { id: "lamp", label: "Đèn cây", kind: "prop", tags: ["lamp", "đèn"], svg: `<svg viewBox="-70 -380 140 380"><g ${S}>
+      <path d="M-60 -300 L-34 -376 H34 L60 -300 Z" fill="#f2c14e"/><rect x="-6" y="-300" width="12" height="280" fill="#5b6876"/>
+      <ellipse cx="0" cy="-12" rx="50" ry="14" fill="#5b6876"/></g></svg>` },
+  { id: "bookshelf", label: "Kệ sách", kind: "scenery", tags: ["bookshelf", "library", "kệ sách"], svg: `<svg viewBox="-160 -460 320 460"><g ${S}>
+      <rect x="-150" y="-450" width="300" height="450" fill="#a06a3c"/>
+      <path d="M-150 -330 H150 M-150 -210 H150 M-150 -90 H150" fill="none" stroke-width="8"/>
+      <rect x="-130" y="-430" width="22" height="96" fill="#e84a5f"/><rect x="-104" y="-420" width="26" height="86" fill="#4aa3df"/><rect x="-74" y="-426" width="20" height="92" fill="#6cbf5a"/><rect x="30" y="-418" width="30" height="84" fill="#f2c14e"/>
+      <rect x="-120" y="-306" width="28" height="92" fill="#9b7be0"/><rect x="-88" y="-300" width="22" height="86" fill="#f2c14e"/><rect x="60" y="-310" width="26" height="96" fill="#e84a5f"/><rect x="90" y="-296" width="22" height="82" fill="#4aa3df"/>
+      <rect x="-40" y="-190" width="30" height="96" fill="#6cbf5a"/><rect x="-6" y="-180" width="24" height="86" fill="#e84a5f"/><rect x="80" y="-186" width="26" height="92" fill="#9b7be0"/></g></svg>` },
+  { id: "whiteboard", label: "Bảng trắng / màn hình", kind: "scenery", tags: ["board", "screen", "class", "bảng", "màn hình"], svg: `<svg viewBox="-300 -520 600 520"><g ${S}>
+      <rect x="-290" y="-510" width="580" height="340" rx="14" fill="#5b6876"/><rect x="-266" y="-486" width="532" height="292" rx="8" fill="#f7f9fb"/>
+      <path d="M-200 -420 H60 M-200 -370 H120 M-200 -320 H20" fill="none" stroke="#9aa7b4" stroke-width="10"/>
+      <rect x="-20" y="-170" width="40" height="170" fill="#5b6876"/><rect x="-140" y="-20" width="280" height="20" rx="8" fill="#5b6876"/></g></svg>` },
+  { id: "news_desk", label: "Bàn tin tức", kind: "scenery", tags: ["news", "studio", "anchor", "tin tức"], svg: `<svg viewBox="-360 -240 720 240"><g ${S}>
+      <path d="M-350 -230 H350 L320 0 H-320 Z" fill="#2f4a7a"/><path d="M-350 -230 H350 V-196 H-350 Z" fill="#ff7a1a"/>
+      <rect x="-120" y="-160" width="240" height="70" rx="10" fill="#1d2f52"/><path d="M-80 -125 H80" fill="none" stroke="#ffffff" stroke-width="10"/></g></svg>` },
+  { id: "car", label: "Ô tô", kind: "prop", tags: ["car", "vehicle", "xe"], svg: `<svg viewBox="-230 -200 460 200"><g ${S}>
+      <path d="M-210 -50 V-100 Q-200 -120 -150 -124 L-100 -186 H90 L150 -124 Q200 -120 212 -100 V-50 Z" fill="#e84a5f"/>
+      <path d="M-84 -170 H-10 V-124 H-128 Z M10 -170 H80 L124 -124 H10 Z" fill="#a8dcf5"/>
+      <circle cx="-120" cy="-46" r="40" fill="#2b2233"/><circle cx="-120" cy="-46" r="16" fill="#9aa7b4"/>
+      <circle cx="120" cy="-46" r="40" fill="#2b2233"/><circle cx="120" cy="-46" r="16" fill="#9aa7b4"/>
+      <rect x="196" y="-96" width="20" height="16" fill="#ffe08a"/></g></svg>` },
+  { id: "tree_pine", label: "Cây thông", kind: "scenery", tags: ["tree", "pine", "forest", "cây", "thông"], svg: `<svg viewBox="-110 -420 220 420"><g ${S}>
+      <rect x="-14" y="-60" width="28" height="60" fill="#6b4226"/>
+      <path d="M0 -416 L70 -300 H34 L90 -190 H44 L104 -60 H-104 L-44 -190 H-90 L-34 -300 H-70 Z" fill="#2f7a4a"/></g></svg>` },
+  { id: "rock", label: "Tảng đá", kind: "prop", tags: ["rock", "stone", "đá"], svg: `<svg viewBox="-130 -110 260 110"><g ${S}>
+      <path d="M-120 0 Q-120 -70 -60 -94 Q0 -116 60 -90 Q124 -66 120 0 Z" fill="#9aa1ad"/><path d="M-40 -70 Q-10 -84 20 -72" fill="none" stroke="#c4cad3" stroke-width="7"/></g></svg>` },
+  { id: "rocket", label: "Tên lửa", kind: "prop", tags: ["rocket", "space", "tên lửa", "vũ trụ"], svg: `<svg viewBox="-110 -470 220 470"><g ${S}>
+      <path d="M-50 -60 Q-70 -300 0 -460 Q70 -300 50 -60 Z" fill="#f7f9fb"/><circle cx="0" cy="-300" r="34" fill="#4aa3df"/>
+      <path d="M-50 -170 L-104 -40 L-50 -60 Z M50 -170 L104 -40 L50 -60 Z" fill="#e84a5f"/>
+      <path d="M-30 -60 Q0 30 30 -60 Z" fill="#ff9f1c"/></g></svg>` },
+  { id: "signpost", label: "Biển chỉ đường", kind: "prop", tags: ["sign", "biển", "chỉ đường"], svg: `<svg viewBox="-140 -330 280 330"><g ${S}>
+      <rect x="-10" y="-300" width="20" height="300" fill="#8a5a33"/>
+      <path d="M-10 -290 H110 L134 -262 L110 -234 H-10 Z" fill="#f2c14e"/><path d="M10 -210 H-110 L-134 -182 L-110 -154 H10 Z" fill="#6cbf5a"/></g></svg>` },
+  { id: "sofa", label: "Ghế sofa", kind: "prop", tags: ["sofa", "home", "nhà"], svg: `<svg viewBox="-230 -200 460 200"><g ${S}>
+      <rect x="-190" y="-196" width="380" height="110" rx="30" fill="#9b7be0"/><rect x="-220" y="-120" width="440" height="90" rx="30" fill="#b59af0"/>
+      <rect x="-200" y="-30" width="20" height="30" fill="#5b3b26"/><rect x="180" y="-30" width="20" height="30" fill="#5b3b26"/></g></svg>` },
+  { id: "flask", label: "Bình thí nghiệm", kind: "prop", tags: ["science", "lab", "flask", "khoa học"], svg: `<svg viewBox="-80 -200 160 200"><g ${S}>
+      <path d="M-22 -196 H22 V-130 L72 -14 Q78 0 60 0 H-60 Q-78 0 -72 -14 L-22 -130 Z" fill="#e6f6ff"/>
+      <path d="M-46 -70 H46 L68 -16 Q72 -6 60 -6 H-60 Q-72 -6 -68 -16 Z" fill="#6cbf5a" stroke-width="4"/>
+      <circle cx="-14" cy="-40" r="8" fill="#ffffff" stroke="none"/><circle cx="16" cy="-56" r="5" fill="#ffffff" stroke="none"/></g></svg>` },
+  { id: "globe", label: "Quả địa cầu", kind: "prop", tags: ["globe", "world", "earth", "địa cầu"], svg: `<svg viewBox="-90 -230 180 230"><g ${S}>
+      <circle cx="0" cy="-140" r="80" fill="#4aa3df"/>
+      <path d="M-50 -180 Q-20 -200 0 -170 Q-30 -150 -40 -120 Q-70 -130 -50 -180 Z M20 -120 Q50 -140 60 -100 Q30 -80 20 -120 Z" fill="#6cbf5a" stroke-width="4"/>
+      <rect x="-8" y="-60" width="16" height="44" fill="#8a5a33"/><rect x="-50" y="-20" width="100" height="20" rx="8" fill="#8a5a33"/></g></svg>` },
+  // ───────── Nhân vật SVG có khung xương (mẫu cho bộ não) ─────────
+  {
+    id: "robot_rig",
+    label: "Robot (khung xương)",
+    kind: "rig",
+    tags: ["robot", "rig", "máy"],
+    svg: `<svg viewBox="-150 -440 300 450" data-anchor="0 0"><g ${S}>
+      <g id="leg_L" data-pivot="-30 -88"><rect x="-46" y="-92" width="32" height="80" rx="10" fill="#9aa7b4"/><rect x="-58" y="-18" width="50" height="20" rx="8" fill="#5b6876"/></g>
+      <g id="leg_R" data-pivot="30 -88"><rect x="14" y="-92" width="32" height="80" rx="10" fill="#9aa7b4"/><rect x="8" y="-18" width="50" height="20" rx="8" fill="#5b6876"/></g>
+      <g id="arm_L" data-pivot="-78 -212"><rect x="-96" y="-222" width="30" height="92" rx="14" fill="#b9c4cf"/><circle cx="-82" cy="-124" r="17" fill="#f2c14e"/></g>
+      <g id="body" data-pivot="0 -84">
+        <rect x="-74" y="-236" width="148" height="156" rx="26" fill="#d6dee6"/>
+        <rect x="-44" y="-206" width="88" height="62" rx="12" fill="#4aa3df"/>
+        <circle cx="-22" cy="-118" r="9" fill="#e84a5f"/><circle cx="4" cy="-118" r="9" fill="#f2c14e"/><circle cx="30" cy="-118" r="9" fill="#6cbf5a"/>
+      </g>
+      <g id="arm_R" data-pivot="78 -212"><rect x="66" y="-222" width="30" height="92" rx="14" fill="#b9c4cf"/><circle cx="82" cy="-124" r="17" fill="#f2c14e"/></g>
+      <g id="head" data-pivot="0 -232">
+        <path d="M0 -390 V-424" fill="none"/><circle cx="0" cy="-430" r="12" fill="#e84a5f"/>
+        <rect x="-92" y="-392" width="184" height="152" rx="40" fill="#e6ecf2"/>
+        <rect x="-70" y="-366" width="140" height="94" rx="26" fill="#2b3a4a"/>
+        <g id="eyes_open"><circle cx="-32" cy="-322" r="15" fill="#7ef0ff" stroke="none"/><circle cx="32" cy="-322" r="15" fill="#7ef0ff" stroke="none"/></g>
+        <g id="eyes_closed"><path d="M-46 -320 H-18 M18 -320 H46" fill="none" stroke="#7ef0ff" stroke-width="7"/></g>
+        <g id="mouth_closed"><path d="M-20 -290 Q0 -280 20 -290" fill="none" stroke="#7ef0ff" stroke-width="6"/></g>
+        <g id="mouth_open"><rect x="-18" y="-296" width="36" height="16" rx="7" fill="#7ef0ff" stroke="none"/></g>
+        <circle cx="-96" cy="-316" r="14" fill="#9aa7b4"/><circle cx="96" cy="-316" r="14" fill="#9aa7b4"/>
+      </g>
+    </g></svg>`,
+  },
   // ───────── Đạo cụ cầm tay ─────────
   {
     id: "sword",

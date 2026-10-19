@@ -1,0 +1,21 @@
+import { writeFileSync } from "node:fs";
+import { nodeCanvas } from "./node-canvas";
+import { Library } from "../src/engine/library";
+import { renderScene } from "../src/engine/render";
+import { Episode, Scene } from "../src/schema";
+const lib = new Library();
+const aspect = process.argv[2] ?? "9:16";
+const ids = [...lib.settings.keys()];
+const [W, H] = aspect === "16:9" ? [384, 216] : [216, 384];
+const cols = aspect === "16:9" ? 4 : 6;
+const sheet = nodeCanvas(cols * W, Math.ceil(ids.length / cols) * H);
+const sctx = sheet.getContext("2d") as unknown as CanvasRenderingContext2D;
+ids.forEach((id, i) => {
+  const sc = Scene.parse({ id: "x", word_start: 0, word_end: 0, narration: "", start: 0, end: 4, duration: 4, background: { setting: id }, camera: { shot: "wide", move: "static" }, characters: [{ character: "robot", mark: "B" }, { character: "senator", mark: "C", pose: "point", flip: true }] });
+  const ep = Episode.parse({ id: "a", title: "", script_text: "", scenes: [sc], subtitles: false, aspect });
+  const c = nodeCanvas(W * 2, H * 2);
+  renderScene(c.getContext("2d") as unknown as CanvasRenderingContext2D, { library: lib, episode: ep, createCanvas: nodeCanvas }, sc, 1.2, { width: c.width, height: c.height });
+  sctx.drawImage(c as unknown as CanvasImageSource, (i % cols) * W, Math.floor(i / cols) * H, W, H);
+  sctx.fillStyle = "#fff"; sctx.font = "bold 14px sans-serif"; sctx.fillText(id, (i % cols) * W + 6, Math.floor(i / cols) * H + 16);
+});
+writeFileSync(`out/settings-${aspect.replace(":", "x")}.png`, sheet.toBuffer("image/png"));

@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react";
+import { ArrowRight, Speech, Upload } from "lucide-react";
+import { DEFAULT_BRIEF } from "../../brain";
+import { ASPECT_LIST } from "../../engine/frame";
 import { estimateAlignment } from "../../pipeline/align";
 import { tokenize } from "../../pipeline/text";
-import { Timeline } from "../components/Timeline";
 import { useStore } from "../store";
+
+const ASPECT_HINT: Record<string, string> = { "9:16": "Shorts · TikTok · Reels", "16:9": "YouTube ngang", "1:1": "Vuông · Facebook", "4:5": "Instagram feed" };
 
 export function ScriptPage() {
   const episode = useStore((s) => s.episode);
-  const library = useStore((s) => s.library);
   const audio = useStore((s) => s.audio);
   const backend = useStore((s) => s.backend);
   const settings = useStore((s) => s.settings);
-  const caps = useStore((s) => s.caps);
-  const st = useStore();
+  const st = useStore.getState();
   const [voices, setVoices] = useState<string[]>([]);
 
   useEffect(() => {
@@ -21,12 +23,10 @@ export function ScriptPage() {
   if (!episode) return <div className="p-8 text-mute">Chưa mở tập nào</div>;
   const words = tokenize(episode.script_text).length;
   const est = episode.script_text.trim() ? estimateAlignment(episode.script_text).duration : 0;
-  const al = episode.alignment;
-  const stale = al && al.words.length !== words;
-  const hasKey = !!settings.anthropicKey;
+  const custom = episode.brief.trim().length > 0;
 
   return (
-    <div className="grid h-full grid-cols-[1fr_400px] gap-4 overflow-hidden p-5">
+    <div className="grid h-full grid-cols-[1fr_380px] gap-4 overflow-hidden p-5">
       <div className="flex min-h-0 flex-col gap-3">
         <input className="field !bg-transparent !px-0 !text-xl font-bold" value={episode.title} onChange={(e) => st.updateEpisode((x) => ({ ...x, title: e.target.value }), { history: false })} />
         <div className="relative min-h-0 flex-1">
@@ -37,21 +37,59 @@ export function ScriptPage() {
             onChange={(e) => st.updateEpisode((x) => ({ ...x, script_text: e.target.value }), { history: false })}
           />
           <div className="absolute right-3 bottom-2 font-mono text-[11px] text-mute">
-            {words} từ · ước lượng ~{est.toFixed(0)}s {stale && <span className="text-warn">· kịch bản đã đổi, cần phân tích lại</span>}
+            {words} từ · ước lượng ~{est.toFixed(0)}s
           </div>
         </div>
-        <Timeline height={118} />
       </div>
 
       <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
         <section className="card p-4">
-          <h3 className="mb-2 font-semibold">1 · Giọng đọc</h3>
+          <h3 className="mb-2 font-semibold">Khung hình</h3>
+          <div className="grid grid-cols-4 gap-2">
+            {ASPECT_LIST.map((a) => {
+              const [w, h] = a.split(":").map(Number);
+              const on = episode.aspect === a;
+              return (
+                <button key={a} title={ASPECT_HINT[a]} onClick={() => st.updateEpisode((e) => ({ ...e, aspect: a }))} className={`flex flex-col items-center gap-1.5 rounded-lg border p-2 ${on ? "border-acc bg-acc/10 text-acc" : "border-line text-mute hover:text-ink"}`}>
+                  <span className="block rounded-sm border-2 border-current" style={{ width: (w / Math.max(w, h)) * 30, height: (h / Math.max(w, h)) * 30 }} />
+                  <span className="font-mono text-[12px]">{a}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11px] text-dim">{ASPECT_HINT[episode.aspect]} — đổi lúc nào cũng được, bối cảnh tự dàn lại.</p>
+        </section>
+
+        <section className="card p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <h3 className="font-semibold">Hướng dẫn phân tích</h3>
+            <div className="ml-auto flex rounded-md border border-line p-0.5 text-[11.5px]">
+              <button className={`rounded px-2 py-0.5 ${!custom ? "bg-panel2 text-ink" : "text-mute"}`} onClick={() => st.updateEpisode((e) => ({ ...e, brief: "" }))}>
+                Mặc định
+              </button>
+              <button className={`rounded px-2 py-0.5 ${custom ? "bg-panel2 text-ink" : "text-mute"}`} onClick={() => !custom && st.updateEpisode((e) => ({ ...e, brief: DEFAULT_BRIEF }))}>
+                Tùy chỉnh
+              </button>
+            </div>
+          </div>
+          <textarea
+            className={`field resize-y text-[12.5px] leading-relaxed ${custom ? "" : "text-mute"}`}
+            rows={7}
+            readOnly={!custom}
+            value={custom ? episode.brief : DEFAULT_BRIEF}
+            onChange={(e) => st.updateEpisode((x) => ({ ...x, brief: e.target.value }), { history: false })}
+          />
+          <p className="mt-1.5 text-[11px] text-dim">Bộ não dùng hướng dẫn này khi lập dàn nhân vật/bối cảnh và khi chia cảnh. Ví dụ: “giọng hài, nhiều cận mặt”, “mỗi cảnh ≤ 3 giây”, “không dùng bản đồ”.</p>
+        </section>
+
+        <section className="card p-4">
+          <h3 className="mb-2 font-semibold">Giọng đọc</h3>
           {audio && episode.audio ? (
             <div className="mb-3 flex flex-col gap-2">
               <audio controls src={audio.url} className="w-full" />
               <div className="flex items-center justify-between text-xs text-mute">
                 <span>
-                  {episode.audio.source === "say" ? "macOS say" : "File tải lên"} · {audio.duration.toFixed(1)}s
+                  {episode.audio.source === "say" ? "Giọng máy macOS" : "File tải lên"} · {audio.duration.toFixed(1)}s
                 </span>
                 <button className="text-bad hover:underline" onClick={st.clearVoice}>
                   Bỏ giọng đọc
@@ -59,15 +97,15 @@ export function ScriptPage() {
               </div>
             </div>
           ) : (
-            <p className="mb-3 text-xs text-mute">Chưa có giọng đọc — thời lượng cảnh đang được ước lượng theo số âm tiết.</p>
+            <p className="mb-3 text-xs text-mute">Chưa có giọng đọc — thời lượng cảnh sẽ được ước lượng. Có giọng đọc thì mỗi cảnh khớp đúng từng từ.</p>
           )}
           <div className="flex flex-wrap gap-2">
             <button className="btn" onClick={() => void st.importVoice()}>
-              ⬆ Nhập file giọng đọc
+              <Upload className="h-3.5 w-3.5" /> Nhập file giọng đọc
             </button>
             {backend?.say && (
-              <button className="btn" onClick={() => void st.sayVoice()} disabled={!episode.script_text.trim()}>
-                🗣 Đọc bằng giọng máy
+              <button className="btn" onClick={() => void st.sayVoice()} disabled={!episode.script_text.trim()} title="Tạo giọng đọc tạm bằng giọng máy có sẵn của macOS (offline) để thử nhịp và chia cảnh trước khi có giọng thật.">
+                <Speech className="h-3.5 w-3.5" /> Đọc bằng giọng máy
               </button>
             )}
           </div>
@@ -81,74 +119,12 @@ export function ScriptPage() {
               <input className="field" type="number" min={120} max={260} value={settings.sayRate} onChange={(e) => void st.saveSettings({ ...settings, sayRate: +e.target.value })} title="Tốc độ (từ/phút)" />
             </div>
           )}
-          {backend?.kind === "web" && <p className="mt-2 text-[11px] text-dim">Chạy app desktop (Tauri) để có giọng máy offline, whisper và xuất MP4.</p>}
+          {backend?.kind === "web" && <p className="mt-2 text-[11px] text-dim">Chạy app desktop để có giọng máy, bộ não CLI và xuất MP4.</p>}
         </section>
 
-        <section className="card p-4">
-          <h3 className="mb-2 font-semibold">2 · Dàn nhân vật</h3>
-          <div className="flex flex-wrap gap-1.5">
-            {[...library.characters.values()].map((c) => {
-              const on = episode.cast.includes(c.id);
-              return (
-                <button key={c.id} className={`chip border ${on ? "border-acc bg-acc/15 text-acc" : "border-line text-mute"}`} onClick={() => st.updateEpisode((e) => ({ ...e, cast: on ? e.cast.filter((x) => x !== c.id) : [...e.cast, c.id] }))}>
-                  {c.name}
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-2 text-[11px] text-dim">Bỏ trống = dùng toàn bộ thư viện. Nhân vật được nhận ra theo tên và biệt danh trong lời dẫn.</p>
-        </section>
-
-        <section className="card p-4">
-          <h3 className="mb-1 font-semibold">3 · Khớp giọng + chia cảnh</h3>
-          <p className="mb-3 text-xs text-mute">
-            Căn thời gian từng từ ({caps?.whisper && settings.whisperModel ? "whisper.cpp" : audio ? "theo khoảng lặng trong giọng đọc" : "ước lượng"}), rồi chia cảnh 1.2–4.2s tại ranh giới ý nghĩa; điểm cắt nằm giữa khoảng lặng.
-          </p>
-          <div className="flex flex-col gap-2">
-            <button className="btn-acc justify-center" disabled={!hasKey || !episode.script_text.trim()} onClick={() => void st.analyze("llm")} title={hasKey ? "" : "Cần Anthropic API key trong Cài đặt"}>
-              ✦ Phân tích bằng Claude
-            </button>
-            <button className="btn justify-center" disabled={!episode.script_text.trim()} onClick={() => void st.analyze("rule")}>
-              ⚙ Phân tích offline (không cần API)
-            </button>
-            {episode.scenes.length > 0 && !stale && (
-              <button className="btn justify-center" onClick={() => void st.realign()}>
-                ↻ Chỉ khớp lại thời gian (giữ nội dung cảnh)
-              </button>
-            )}
-          </div>
-          {!hasKey && <p className="mt-2 text-[11px] text-dim">Thêm Anthropic API key trong Cài đặt để Claude chia cảnh, dịch và chọn tham số.</p>}
-        </section>
-
-        {al && (
-          <section className="card p-4 text-xs">
-            <h3 className="mb-2 text-[13px] font-semibold">Kết quả căn thời gian</h3>
-            <div className="grid grid-cols-2 gap-y-1 text-mute">
-              <span>Phương pháp</span>
-              <span className="text-ink">{al.method}</span>
-              <span>Số từ</span>
-              <span className="text-ink">{al.words.length}</span>
-              <span>Thời lượng</span>
-              <span className="text-ink">{al.duration.toFixed(2)}s</span>
-              <span>Khoảng lặng</span>
-              <span className="text-ink">{al.silences.length}</span>
-              <span>Số cảnh</span>
-              <span className="text-ink">{episode.scenes.length}</span>
-            </div>
-            {al.mismatches.length > 0 && (
-              <div className="mt-2">
-                <div className="mb-1 text-warn">Giọng đọc lệch kịch bản ({al.mismatches.length}):</div>
-                <ul className="max-h-32 overflow-y-auto">
-                  {al.mismatches.slice(0, 30).map((m, i) => (
-                    <li key={i}>
-                      “{m.expected}” → <span className="text-warn">{m.heard || "(bỏ qua)"}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </section>
-        )}
+        <button className="btn-acc justify-center !py-2.5" disabled={!episode.script_text.trim()} onClick={() => st.setPage("cast")}>
+          Tiếp: Nhân vật & Bối cảnh <ArrowRight className="h-3.5 w-3.5" />
+        </button>
       </div>
     </div>
   );

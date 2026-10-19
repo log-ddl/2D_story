@@ -126,10 +126,73 @@ fn find_tool(name: &str, custom: &str) -> Option<PathBuf> {
     let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
         .unwrap_or_default();
-    for d in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/opt/local/bin"] {
-        dirs.push(PathBuf::from(d));
-    }
+    dirs.extend(extra_bin_dirs());
     dirs.into_iter().map(|d| d.join(name)).find(|p| p.exists())
+}
+
+/// Các thư mục cài CLI phổ biến (Homebrew, npm/bun/volta, ~/.local/bin, nvm…)
+fn extra_bin_dirs() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/opt/local/bin"].iter().map(PathBuf::from).collect();
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        for d in [".local/bin", ".npm-global/bin", ".bun/bin", ".volta/bin", ".cargo/bin", ".claude/local", "Library/pnpm", ".deno/bin"] {
+            v.push(home.join(d));
+        }
+        if let Ok(rd) = std::fs::read_dir(home.join(".nvm/versions/node")) {
+            for e in rd.flatten() {
+                v.push(e.path().join("bin"));
+            }
+        }
+    }
+    v
+}
+
+/// Môi trường của shell đăng nhập (app GUI không đọc ~/.zshrc nên thiếu biến như
+/// ANTHROPIC_BASE_URL, token, PATH của nvm…). Lấy một lần, giới hạn 6 giây.
+fn shell_env() -> &'static Vec<(String, String)> {
+    static ENV: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+    ENV.get_or_init(|| {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        let Ok(mut child) = Command::new(&shell)
+            .args(["-ilc", "env -0"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+        else {
+            return vec![];
+        };
+        let started = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if started.elapsed().as_secs() < 6 => std::thread::sleep(std::time::Duration::from_millis(50)),
+                _ => {
+                    let _ = child.kill();
+                    return vec![];
+                }
+            }
+        }
+        let mut out = String::new();
+        if let Some(mut so) = child.stdout.take() {
+            use std::io::Read;
+            let _ = so.read_to_string(&mut out);
+        }
+        out.split('\0')
+            .filter_map(|kv| kv.split_once('='))
+            .filter(|(k, _)| !k.is_empty() && !matches!(*k, "PWD" | "OLDPWD" | "SHLVL" | "_"))
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    })
+}
+
+fn child_path() -> std::ffi::OsString {
+    let mut dirs: Vec<PathBuf> = vec![];
+    if let Some((_, p)) = shell_env().iter().find(|(k, _)| k == "PATH") {
+        dirs.extend(std::env::split_paths(p));
+    }
+    dirs.extend(std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect::<Vec<_>>()).unwrap_or_default());
+    dirs.extend(extra_bin_dirs());
+    std::env::join_paths(dirs).unwrap_or_default()
 }
 
 #[derive(Serialize)]
@@ -254,6 +317,190 @@ fn quit(app: tauri::AppHandle) {
 #[tauri::command]
 fn reveal(path: String) -> CmdResult<()> {
     Command::new("open").args(["-R", &path]).spawn().map_err(err)?;
+    Ok(())
+}
+
+
+// ───────── Bộ não: gọi CLI AI (claude / codex / agy) ở chế độ không tương tác ─────────
+
+#[derive(Default)]
+struct BrainState(Mutex<Option<u32>>);
+
+#[derive(Deserialize)]
+struct BrainReq {
+    cli: String,
+    path: String,
+    model: String,
+    prompt: String,
+    /// JSON Schema (chuỗi) cho structured output
+    schema: String,
+    timeout_s: u64,
+}
+
+#[derive(Serialize)]
+struct BrainTools {
+    claude: Option<String>,
+    codex: Option<String>,
+    agy: Option<String>,
+}
+
+#[tauri::command]
+fn brain_detect(claude: String, codex: String, agy: String) -> BrainTools {
+    let f = |n: &str, c: &str| find_tool(n, c).map(|p| p.to_string_lossy().into_owned());
+    BrainTools { claude: f("claude", &claude), codex: f("codex", &codex), agy: f("agy", &agy) }
+}
+
+/// Chạy một lượt, trả về chuỗi JSON đúng schema.
+fn brain_exec(req: &BrainReq, pid_slot: &Mutex<Option<u32>>) -> CmdResult<String> {
+    let bin = find_tool(&req.cli, &req.path).ok_or_else(|| format!("Không tìm thấy CLI `{}` — cài đặt hoặc chỉ đường dẫn trong Cài đặt", req.cli))?;
+    // chạy trong thư mục tạm trống để agent không đọc file của người dùng
+    let work = std::env::temp_dir().join(format!("fxcine-brain-{}", now_ms()));
+    std::fs::create_dir_all(&work).map_err(err)?;
+    let out_file = work.join("stdout.txt");
+    let err_file = work.join("stderr.txt");
+    let last_msg = work.join("last.txt");
+    let schema_file = work.join("schema.json");
+    std::fs::write(&schema_file, &req.schema).map_err(err)?;
+    let mut cmd = Command::new(&bin);
+    cmd.current_dir(&work).envs(shell_env().iter().map(|(k, v)| (k, v))).env("PATH", child_path());
+    let mut stdin_prompt = false;
+    match req.cli.as_str() {
+        "claude" => {
+            cmd.args(["-p", "--output-format", "json", "--json-schema", &req.schema, "--tools", ""]);
+            if !req.model.is_empty() {
+                cmd.args(["--model", &req.model]);
+            }
+            stdin_prompt = true;
+        }
+        "codex" => {
+            cmd.args(["exec", "--skip-git-repo-check", "--sandbox", "read-only", "--output-schema"]).arg(&schema_file).arg("--output-last-message").arg(&last_msg);
+            if !req.model.is_empty() {
+                cmd.args(["-m", &req.model]);
+            }
+            cmd.arg("-");
+            stdin_prompt = true;
+        }
+        "agy" => {
+            cmd.args(["--output-format", "json", "--json-schema", &req.schema]);
+            if !req.model.is_empty() {
+                cmd.args(["--model", &req.model]);
+            }
+            cmd.args(["-p", &req.prompt]);
+        }
+        other => return Err(format!("CLI không hỗ trợ: {other}")),
+    }
+    cmd.stdout(std::fs::File::create(&out_file).map_err(err)?).stderr(std::fs::File::create(&err_file).map_err(err)?);
+    cmd.stdin(if stdin_prompt { Stdio::piped() } else { Stdio::null() });
+    let mut child = cmd.spawn().map_err(|e| format!("Không chạy được {}: {e}", bin.display()))?;
+    if stdin_prompt {
+        let mut sin = child.stdin.take().ok_or("không mở được stdin")?;
+        sin.write_all(req.prompt.as_bytes()).map_err(err)?;
+    }
+    *pid_slot.lock().map_err(err)? = Some(child.id());
+    let started = std::time::Instant::now();
+    let status = loop {
+        if let Some(st) = child.try_wait().map_err(err)? {
+            break st;
+        }
+        if req.timeout_s > 0 && started.elapsed().as_secs() > req.timeout_s {
+            let _ = child.kill();
+            *pid_slot.lock().map_err(err)? = None;
+            return Err(format!("Quá thời gian {}s", req.timeout_s));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    };
+    *pid_slot.lock().map_err(err)? = None;
+    let stdout = std::fs::read_to_string(&out_file).unwrap_or_default();
+    let stderr = std::fs::read_to_string(&err_file).unwrap_or_default();
+    let last = std::fs::read_to_string(&last_msg).unwrap_or_default();
+    let _ = std::fs::remove_dir_all(&work);
+    let tail = |s: &str| s.lines().rev().take(8).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+    if !status.success() && req.cli != "claude" {
+        return Err(format!("{} thoát lỗi ({}): {}", req.cli, status, tail(if stderr.trim().is_empty() { &stdout } else { &stderr })));
+    }
+    parse_brain_output(&req.cli, &stdout, &last).map_err(|e| if stderr.trim().is_empty() { e } else { format!("{e}\n{}", tail(&stderr)) })
+}
+
+/// Rút JSON kết quả từ đầu ra của từng CLI.
+fn parse_brain_output(cli: &str, stdout: &str, last: &str) -> CmdResult<String> {
+    match cli {
+        "codex" => {
+            let t = if last.trim().is_empty() { stdout } else { last };
+            Ok(t.trim().to_string())
+        }
+        _ => {
+            let v: serde_json::Value = serde_json::from_str(stdout.trim()).map_err(|e| format!("Đầu ra không phải JSON ({e}): {}", stdout.chars().take(300).collect::<String>()))?;
+            let failed = v.get("is_error").and_then(|x| x.as_bool()).unwrap_or(false) || v.get("status").and_then(|x| x.as_str()).is_some_and(|s| s != "SUCCESS");
+            if failed {
+                let msg = v.get("result").or_else(|| v.get("error")).or_else(|| v.get("response")).map(|x| x.to_string()).unwrap_or_else(|| stdout.chars().take(300).collect());
+                return Err(format!("{cli} báo lỗi: {msg}"));
+            }
+            if let Some(so) = v.get("structured_output").filter(|x| !x.is_null()) {
+                return Ok(so.to_string());
+            }
+            let text = v.get("result").or_else(|| v.get("response")).and_then(|x| x.as_str()).unwrap_or_default();
+            Ok(text.to_string())
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ModelInfo {
+    id: String,
+    label: String,
+}
+
+/// Danh sách model của CLI: agy liệt kê động (`agy models`); claude dùng danh sách model hiện hành.
+#[tauri::command]
+async fn brain_models(cli: String, path: String) -> CmdResult<Vec<ModelInfo>> {
+    tauri::async_runtime::spawn_blocking(move || -> CmdResult<Vec<ModelInfo>> {
+        let m = |id: &str, label: &str| ModelInfo { id: id.into(), label: label.into() };
+        match cli.as_str() {
+            "claude" => Ok(vec![
+                m("claude-opus-5-5", "Claude Opus 5.5 (mới nhất)"),
+                m("claude-fable-5-1", "Claude Fable 5.1 (mạnh nhất)"),
+                m("claude-sonnet-5-5", "Claude Sonnet 5.5"),
+                m("claude-haiku-5-5", "Claude Haiku 5.5 (nhanh)"),
+            ]),
+            "agy" | "codex" => {
+                let Some(bin) = find_tool(&cli, &path) else { return Ok(vec![]) };
+                let out = Command::new(bin).arg("models").env("PATH", child_path()).envs(shell_env().iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).output().map_err(err)?;
+                let text = String::from_utf8_lossy(&out.stdout);
+                Ok(text
+                    .lines()
+                    .filter_map(|l| {
+                        let mut parts = l.splitn(2, '\t');
+                        let id = parts.next()?.trim();
+                        if id.is_empty() || id.contains(' ') {
+                            return None;
+                        }
+                        Some(m(id, parts.next().unwrap_or(id).trim()))
+                    })
+                    .collect())
+            }
+            _ => Ok(vec![]),
+        }
+    })
+    .await
+    .map_err(err)?
+}
+
+#[tauri::command]
+async fn brain_run(app: tauri::AppHandle, req: BrainReq) -> CmdResult<String> {
+    // chạy chặn trong luồng nền; PID lưu trong BrainState để brain_cancel dùng
+    tauri::async_runtime::spawn_blocking(move || {
+        let st = app.state::<BrainState>();
+        brain_exec(&req, &st.0)
+    })
+    .await
+    .map_err(err)?
+}
+
+#[tauri::command]
+fn brain_cancel(state: State<'_, BrainState>) -> CmdResult<()> {
+    if let Some(pid) = state.0.lock().map_err(err)?.take() {
+        let _ = Command::new("kill").arg(pid.to_string()).status();
+    }
     Ok(())
 }
 
@@ -433,6 +680,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(ExportState::default())
+        .manage(BrainState::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?;
@@ -454,6 +702,10 @@ pub fn run() {
             whisper,
             reveal,
             selftest_target,
+            brain_detect,
+            brain_run,
+            brain_models,
+            brain_cancel,
             quit,
             export_begin,
             export_frame,
@@ -475,6 +727,35 @@ mod tests {
         assert!(safe_join(base, "../etc/passwd").is_err());
         assert!(safe_join(base, "/etc/passwd").is_err());
         assert!(safe_join(base, "a/../../b").is_err());
+    }
+
+    #[test]
+    fn parses_cli_outputs() {
+        let agy = r#"{"status":"SUCCESS","response":"x","structured_output":{"a":1}}"#;
+        assert_eq!(parse_brain_output("agy", agy, "").unwrap(), r#"{"a":1}"#);
+        let claude_err = r#"{"is_error":true,"result":"Not logged in"}"#;
+        assert!(parse_brain_output("claude", claude_err, "").unwrap_err().contains("Not logged in"));
+        let claude_ok = r#"{"is_error":false,"result":"{\"a\":2}"}"#;
+        assert_eq!(parse_brain_output("claude", claude_ok, "").unwrap(), r#"{"a":2}"#);
+        assert_eq!(parse_brain_output("codex", "log", " {\"a\":3}\n").unwrap(), r#"{"a":3}"#);
+    }
+
+    /// Gọi CLI thật (chạy tay: cargo test brain_live -- --ignored)
+    #[test]
+    #[ignore]
+    fn brain_live() {
+        let cli = std::env::var("BRAIN_CLI").unwrap_or("agy".into());
+        let req = BrainReq {
+            cli,
+            path: String::new(),
+            model: String::new(),
+            prompt: "Trả về name=\"fxcine\" và n=7.".into(),
+            schema: r#"{"type":"object","properties":{"name":{"type":"string"},"n":{"type":"integer"}},"required":["name","n"],"additionalProperties":false}"#.into(),
+            timeout_s: 120,
+        };
+        let out = brain_exec(&req, &Mutex::new(None)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["n"], 7, "{out}");
     }
 
     /// Xuất thật bằng ffmpeg: frame thô qua stdin + voice + sfx + nhạc (sidechain).

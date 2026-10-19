@@ -145,6 +145,14 @@ export interface CharacterDrawOpts {
   talk: number;
   seed: number;
   getModule: (id: string) => SvgModule | undefined;
+  /** tư thế đã nội suy (từ hành động) — ghi đè `pose` */
+  poseOverride?: Pose;
+  /** nghiêng người khi di chuyển -1..1 (áo choàng/tóc bay ngược) */
+  lean?: number;
+  /** điểm chỉ tay, tọa độ cục bộ của nhân vật (đã tính lật) */
+  pointAt?: { x: number; y: number } | null;
+  /** hình miệng khi nói */
+  viseme?: "a" | "o" | "e" | "m";
 }
 
 function outlinedFill(ctx: CanvasRenderingContext2D, fill: string, lw = LW) {
@@ -208,11 +216,23 @@ function animatedPose(base: Pose, u: number, seed: number): Pose {
   return p;
 }
 
+/** IK hướng: góc vai (độ, dương = ra ngoài thân) để cánh tay duỗi thẳng về điểm đích */
+export function aimArm(shoulder: [number, number], target: { x: number; y: number }, side: -1 | 1): [number, number] {
+  const dx = (target.x - shoulder[0]) * side;
+  const dy = target.y - shoulder[1];
+  return [Math.atan2(dx, dy) / DEG, 0];
+}
+
 export function drawCharacter(ctx: CanvasRenderingContext2D, rawSpec: CharacterSpec, o: CharacterDrawOpts) {
   const spec = variantSpec(rawSpec, o.seed);
+  if (spec.kind === "svg" && spec.rig) {
+    const m = o.getModule(spec.rig);
+    if (m) return drawRigged(ctx, m, o);
+  }
   const d = dims(spec);
-  const basePose = POSES[o.pose]?.pose ?? POSES.stand.pose;
+  const basePose = o.poseOverride ?? POSES[o.pose]?.pose ?? POSES.stand.pose;
   const pose = animatedPose(basePose, o.u, o.seed);
+  const lean = o.lean ?? 0;
   const face = { ...(EXPRESSIONS[o.expression]?.face ?? EXPRESSIONS.neutral.face) };
   const phase = (o.seed % 1000) / 160;
 
@@ -235,9 +255,11 @@ export function drawCharacter(ctx: CanvasRenderingContext2D, rawSpec: CharacterS
   if (spec.cape) {
     ctx.beginPath();
     ctx.moveTo(-d.bodyW * 0.38, hipY - d.bodyH * 0.92);
-    ctx.quadraticCurveTo(-d.bodyW * 0.75, hipY + legLen * 0.2, -d.bodyW * 0.62, -4);
-    ctx.lineTo(d.bodyW * 0.62, -4);
-    ctx.quadraticCurveTo(d.bodyW * 0.75, hipY + legLen * 0.2, d.bodyW * 0.38, hipY - d.bodyH * 0.92);
+    // chuyển động phụ: vạt áo choàng lắc theo thời gian và bay ngược hướng đi
+    const sway = Math.sin(o.u * 2.4 + phase) * 6 + lean * 70;
+    ctx.quadraticCurveTo(-d.bodyW * 0.75 + sway * 0.5, hipY + legLen * 0.2, -d.bodyW * 0.62 + sway, -4 - Math.abs(lean) * 20);
+    ctx.lineTo(d.bodyW * 0.62 + sway, -4 - Math.abs(lean) * 20);
+    ctx.quadraticCurveTo(d.bodyW * 0.75 + sway * 0.5, hipY + legLen * 0.2, d.bodyW * 0.38, hipY - d.bodyH * 0.92);
     ctx.closePath();
     outlinedFill(ctx, spec.cape);
   }
@@ -258,16 +280,24 @@ export function drawCharacter(ctx: CanvasRenderingContext2D, rawSpec: CharacterS
   // Thân
   ctx.save();
   ctx.translate(0, hipY);
-  ctx.rotate(pose.torso * DEG + noise1(o.seed + 7, o.u * 0.6) * 0.012);
+  ctx.rotate(pose.torso * DEG + noise1(o.seed + 7, o.u * 0.6) * 0.012 - lean * 0.08);
   ctx.scale(1, 1 + breathe * 0.012);
   drawBody(ctx, spec, d);
 
   // Tay
   const shY = -d.bodyH * 0.84;
   const shX = d.bodyW * 0.36;
+  let armL = pose.armL;
+  let armR = pose.armR;
+  if (o.pointAt) {
+    // đổi điểm đích sang hệ tọa độ thân (gốc ở hông)
+    const tgt = { x: o.pointAt.x, y: o.pointAt.y - hipY };
+    if (tgt.x >= 0) armR = aimArm([shX, shY], tgt, 1);
+    else armL = aimArm([-shX, shY], tgt, -1);
+  }
   const arms = {
-    L: armPoints([-shX, shY], -1, pose.armL[0], pose.armL[1], d.armU, d.armF),
-    R: armPoints([shX, shY], 1, pose.armR[0], pose.armR[1], d.armU, d.armF),
+    L: armPoints([-shX, shY], -1, armL[0], armL[1], d.armU, d.armF),
+    R: armPoints([shX, shY], 1, armR[0], armR[1], d.armU, d.armF),
   };
   // Cánh tay vắt ngang thân (khoanh tay) vẽ sau đầu? Không — vẽ trước đầu, sau thân.
   for (const k of ["L", "R"] as const) {
@@ -575,9 +605,11 @@ function drawFace(ctx: CanvasRenderingContext2D, spec: CharacterSpec, R: number,
   drawBeard(ctx, spec.beard.style, spec.beard.color, R, false);
 
   // Miệng
-  const talkOpen = o.talk;
+  // hình miệng theo âm vị: o tròn hẹp, e dẹt rộng, m khép
+  const vis = o.talk > 0.05 ? (o.viseme ?? "a") : "a";
+  const talkOpen = vis === "m" ? 0 : o.talk * (vis === "e" ? 0.55 : 1);
   const mOpen = Math.max(f.mouthOpen, talkOpen * 0.85);
-  const w = R * 0.2 * f.mouthWidth * (1 - talkOpen * 0.25);
+  const w = R * 0.2 * f.mouthWidth * (vis === "o" && o.talk > 0.05 ? 0.6 : vis === "e" && o.talk > 0.05 ? 1.15 : 1 - talkOpen * 0.25);
   const my = R * 0.5;
   const curve = f.mouthCurve;
   ctx.save();
@@ -787,3 +819,58 @@ function drawHair(ctx: CanvasRenderingContext2D, style: string, color: string, R
 }
 
 export const clampTalk = (v: number) => clamp(v, 0, 1);
+
+// ───────── Nhân vật SVG có khung xương ─────────
+// Quy ước: viewBox có gốc (0,0) ở giữa hai bàn chân (data-anchor="0 0"), cao ~370 đơn vị.
+// Nhóm bắt buộc: body, head, arm_L, arm_R, leg_L, leg_R (mỗi nhóm có data-pivot="x y" = khớp).
+// Nhóm tùy chọn: forearm_L/forearm_R (lồng trong arm_*), mouth_open/mouth_closed, eyes_open/eyes_closed, tail.
+
+export const RIG_GROUPS = ["body", "head", "arm_L", "arm_R", "leg_L", "leg_R"] as const;
+
+export function drawRigged(ctx: CanvasRenderingContext2D, m: SvgModule, o: CharacterDrawOpts) {
+  const pose = animatedPose(o.poseOverride ?? POSES[o.pose]?.pose ?? POSES.stand.pose, o.u, o.seed);
+  const walk = pose.anim === "walk";
+  const swing = walk ? Math.sin(o.u * 7) * 16 : 0;
+  const breathe = Math.sin((o.u / 2.8) * Math.PI * 2 + (o.seed % 1000) / 160);
+  const talk = o.talk > 0.25 && o.viseme !== "m";
+  const blink = blinkAmount(o.t, o.seed) > 0.4;
+  const hide = new Set<string>([talk ? "mouth_closed" : "mouth_open", blink ? "eyes_open" : "eyes_closed"]);
+  let armL = pose.armL;
+  let armR = pose.armR;
+  if (o.pointAt) {
+    const sh = (id: string): [number, number] => (m.groups[id]?.attrs["data-pivot"] ?? "0 -200").split(/[\s,]+/).map(Number) as [number, number];
+    if (o.pointAt.x >= 0) armR = aimArm(sh("arm_R"), o.pointAt, 1);
+    else armL = aimArm(sh("arm_L"), o.pointAt, -1);
+  }
+  // Góc trong SVG: 0 = tay buông; khớp quay quanh data-pivot
+  const rot: Record<string, number> = {
+    arm_L: armL[0] - 12,
+    arm_R: -(armR[0] - 12),
+    forearm_L: armL[1] + 8,
+    forearm_R: -(armR[1] + 8),
+    leg_L: swing,
+    leg_R: -swing,
+    head: pose.head + (o.talk > 0 ? noise1(o.seed + 3, o.u * 4) * 3 : 0),
+    tail: Math.sin(o.u * 5) * 12 + (o.lean ?? 0) * 25,
+  };
+  const xform: Record<string, (c: CanvasRenderingContext2D, pivot: [number, number]) => void> = {};
+  for (const [id, deg] of Object.entries(rot)) {
+    xform[id] = (c, [px, py]) => {
+      c.translate(px, py);
+      c.rotate(deg * DEG);
+      c.translate(-px, -py);
+    };
+  }
+  ctx.save();
+  if (walk) ctx.translate(0, -Math.abs(Math.sin(o.u * 7)) * 6);
+  ctx.scale(1, 1 + breathe * 0.01);
+  drawModule(ctx, m, { hide, xform, palette: {} });
+  ctx.restore();
+}
+
+/** Kiểm tra SVG nhân vật có đủ nhóm khung xương */
+export function lintRig(m: SvgModule): string[] {
+  const miss = RIG_GROUPS.filter((g) => !m.groups[g]);
+  const noPivot = RIG_GROUPS.filter((g) => m.groups[g] && g !== "body" && !m.groups[g].attrs["data-pivot"]);
+  return [...miss.map((g) => `Thiếu nhóm "${g}"`), ...noPivot.map((g) => `Nhóm "${g}" thiếu data-pivot`)];
+}

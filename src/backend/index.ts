@@ -3,28 +3,51 @@
 import { Episode, Project } from "../schema";
 
 export interface AppSettings {
-  anthropicKey: string;
-  model: string;
+  /** CLI dùng làm bộ não */
+  brainCli: "claude" | "codex" | "agy";
+  claudeModel: string;
+  codexModel: string;
+  agyModel: string;
+  brainTimeout: number;
+  claudePath: string;
+  codexPath: string;
+  agyPath: string;
   ffmpeg: string;
   whisperCli: string;
   whisperModel: string;
   sayVoice: string;
   sayRate: number;
-  elevenKey: string;
-  elevenVoice: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  anthropicKey: "",
-  model: "claude-opus-5-5",
+  brainCli: "claude",
+  claudeModel: "claude-opus-5-5",
+  codexModel: "",
+  agyModel: "",
+  brainTimeout: 600,
+  claudePath: "",
+  codexPath: "",
+  agyPath: "",
   ffmpeg: "",
   whisperCli: "",
   whisperModel: "",
   sayVoice: "Daniel",
   sayRate: 185,
-  elevenKey: "",
-  elevenVoice: "",
 };
+
+/** Gộp với mặc định, bỏ khóa cũ không còn dùng */
+export function pickSettings(raw: object | null): AppSettings {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const out = { ...DEFAULT_SETTINGS } as Record<string, unknown>;
+  for (const k of Object.keys(DEFAULT_SETTINGS)) if (k in r && typeof r[k] === typeof out[k]) out[k] = r[k];
+  return out as unknown as AppSettings;
+}
+
+export interface BrainTools {
+  claude: string | null;
+  codex: string | null;
+  agy: string | null;
+}
 
 export interface ProjectMeta {
   id: string;
@@ -82,6 +105,10 @@ export interface Backend {
   exportEnd?(): Promise<string>;
   exportCancel?(): Promise<void>;
   reveal?(path: string): Promise<void>;
+  brainDetect?(s: AppSettings): Promise<BrainTools>;
+  brainRun?(prompt: string, schema: string, s: AppSettings): Promise<string>;
+  brainCancel?(): Promise<void>;
+  brainModels?(cli: string, s: AppSettings): Promise<{ id: string; label: string }[]>;
 }
 
 export const isTauri = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;

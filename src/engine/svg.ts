@@ -191,6 +191,8 @@ export interface DrawOptions {
   hide?: Set<string>;
   /** Chỉ vẽ nhóm này */
   only?: string;
+  /** Biến đổi thêm cho nhóm theo id (khung xương): nhận điểm xoay data-pivot */
+  xform?: Record<string, (ctx: CanvasRenderingContext2D, pivot: [number, number]) => void>;
 }
 
 export function drawNode(ctx: CanvasRenderingContext2D, n: SvgNode, inh: Inherited, opts: DrawOptions) {
@@ -206,10 +208,12 @@ export function drawNode(ctx: CanvasRenderingContext2D, n: SvgNode, inh: Inherit
     fillOpacity: a["fill-opacity"] !== undefined ? num(a["fill-opacity"], 1) : inh.fillOpacity,
     strokeOpacity: a["stroke-opacity"] !== undefined ? num(a["stroke-opacity"], 1) : inh.strokeOpacity,
   };
-  const hasTr = !!a.transform;
+  const xf = a.id ? opts.xform?.[a.id] : undefined;
+  const hasTr = !!a.transform || !!xf;
   if (hasTr) {
     ctx.save();
-    applyTransform(ctx, a.transform);
+    if (a.transform) applyTransform(ctx, a.transform);
+    if (xf) xf(ctx, (a["data-pivot"] ?? "0 0").split(/[\s,]+/).map(Number) as [number, number]);
   }
   if (n.d !== undefined) {
     const p = getPath(n);

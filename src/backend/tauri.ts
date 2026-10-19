@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { DEFAULT_SETTINGS, parseEpisode, parseProject, type AppSettings, type Backend, type Capabilities, type ExportParams, type MediaInfo } from "./index";
+import { pickSettings, parseEpisode, parseProject, type AppSettings, type Backend, type Capabilities, type ExportParams, type MediaInfo } from "./index";
 
 const P = (pid: string) => `projects/${pid}`;
 
@@ -48,7 +48,7 @@ export function createTauriBackend(): Backend {
       return invoke<MediaInfo>("import_audio", { project: pid, src, prefix, ffmpeg: s.ffmpeg });
     },
     async loadSettings() {
-      return { ...DEFAULT_SETTINGS, ...((await readJson("settings.json")) ?? {}) };
+      return pickSettings((await readJson("settings.json")) ?? {});
     },
     saveSettings: (s: AppSettings) => writeJson("settings.json", s).then(() => undefined),
     capabilities: (s) => invoke<Capabilities>("capabilities", { ffmpeg: s.ffmpeg, whisper: s.whisperCli }),
@@ -61,5 +61,13 @@ export function createTauriBackend(): Backend {
     exportEnd: () => invoke<string>("export_end"),
     exportCancel: () => invoke("export_cancel"),
     reveal: (path) => invoke("reveal", { path }),
+    brainDetect: (s) => invoke("brain_detect", { claude: s.claudePath, codex: s.codexPath, agy: s.agyPath }),
+    brainRun: (prompt, schema, s) => {
+      const path = s.brainCli === "claude" ? s.claudePath : s.brainCli === "codex" ? s.codexPath : s.agyPath;
+      const model = s.brainCli === "claude" ? s.claudeModel : s.brainCli === "codex" ? s.codexModel : s.agyModel;
+      return invoke<string>("brain_run", { req: { cli: s.brainCli, path, model, prompt, schema, timeout_s: s.brainTimeout } });
+    },
+    brainCancel: () => invoke("brain_cancel"),
+    brainModels: (cli, s) => invoke("brain_models", { cli, path: cli === "claude" ? s.claudePath : cli === "codex" ? s.codexPath : s.agyPath }),
   };
 }

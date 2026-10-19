@@ -12,8 +12,11 @@ function useCanvas(draw: (ctx: CanvasRenderingContext2D, w: number, h: number, t
     if (!c) return;
     const ctx = c.getContext("2d")!;
     let raf = 0;
+    let disposed = false;
     const t0 = performance.now();
     const frame = () => {
+      raf = 0;
+      if (disposed || !c.clientWidth) return; // trang đang ẩn → dừng, ResizeObserver sẽ gọi lại
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const w = Math.round(c.clientWidth * dpr);
       const h = Math.round(c.clientHeight * dpr);
@@ -27,13 +30,21 @@ function useCanvas(draw: (ctx: CanvasRenderingContext2D, w: number, h: number, t
       if (animate) raf = requestAnimationFrame(frame);
     };
     frame();
-    return () => cancelAnimationFrame(raf);
+    const ro = new ResizeObserver(() => {
+      if (!raf) frame();
+    });
+    ro.observe(c);
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return ref;
 }
 
-export function CharacterPreview({ spec, pose, expression, library, talk = false, className }: { spec: CharacterSpec; pose: string; expression: string; library: Library; talk?: boolean; className?: string }) {
+export function CharacterPreview({ spec, pose, expression, library, talk = false, animate = true, className }: { spec: CharacterSpec; pose: string; expression: string; library: Library; talk?: boolean; animate?: boolean; className?: string }) {
   const ref = useCanvas(
     (ctx, w, h, t) => {
       const k = h / 470;
@@ -43,10 +54,10 @@ export function CharacterPreview({ spec, pose, expression, library, talk = false
       ctx.beginPath();
       ctx.ellipse(0, 0, 90, 14, 0, 0, Math.PI * 2);
       ctx.fill();
-      drawCharacter(ctx, spec, { pose, expression, t, u: t, talk: talk ? Math.abs(Math.sin(t * 9)) * 0.9 : 0, seed: 11, getModule: library.getModule });
+      drawCharacter(ctx, spec, { pose, expression, t: animate ? t : 0.5, u: animate ? t : 0.5, talk: talk ? Math.abs(Math.sin(t * 9)) * 0.9 : 0, seed: 11, getModule: library.getModule });
     },
-    true,
-    [spec, pose, expression, library, talk],
+    animate,
+    [spec, pose, expression, library, talk, animate],
   );
   return <canvas ref={ref} className={className} />;
 }
@@ -78,15 +89,15 @@ export function ModulePreview({ svg, module, className }: { svg?: string; module
   return <canvas ref={ref} className={className} />;
 }
 
-export function SettingPreview({ settingId, library, className }: { settingId: string; library: Library; className?: string }) {
+export function SettingPreview({ settingId, library, aspect = "9:16", className }: { settingId: string; library: Library; aspect?: string; className?: string }) {
   const ref = useCanvas(
     (ctx, w, h, t) => {
       const scene = Scene.parse({ id: "p", word_start: 0, word_end: 0, narration: "", start: 0, end: 4, duration: 4, background: { setting: settingId }, camera: { shot: "wide", move: "static" } });
-      const ep = Episode.parse({ id: "p", title: "", script_text: "", scenes: [scene], subtitles: false });
+      const ep = Episode.parse({ id: "p", title: "", script_text: "", scenes: [scene], subtitles: false, aspect });
       renderScene(ctx, { library, episode: ep }, scene, t, { width: w, height: h });
     },
     false,
-    [settingId, library],
+    [settingId, library, aspect],
   );
-  return <canvas ref={ref} className={className} style={{ aspectRatio: "9/16" }} />;
+  return <canvas ref={ref} className={className} style={{ aspectRatio: aspect.replace(":", " / ") }} />;
 }

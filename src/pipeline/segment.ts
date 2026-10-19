@@ -3,7 +3,11 @@
 
 import { z } from "zod";
 import type { Alignment, Beat, CharacterSpec, Episode, Scene, SettingSpec, Word } from "../schema";
-import { Scene as SceneSchema, BEATS, SHOTS, MOVES, WEATHERS, LIGHTINGS, OVERLAY_STYLES, TRANSITIONS } from "../schema";
+import { Scene as SceneSchema, BEATS, SHOTS, MOVES, WEATHERS, LIGHTINGS, OVERLAY_STYLES, TRANSITIONS, VERBS, type Action, type Verb } from "../schema";
+import { BUILTIN_MODULES } from "../library/modules";
+
+/** Module dùng làm đạo cụ trong cảnh */
+const PROP_MODULES = BUILTIN_MODULES.filter((m) => m.kind === "prop" || m.kind === "hand").map((m) => m.id);
 import { hash } from "../engine/math";
 import { tokenize } from "./text";
 
@@ -211,7 +215,8 @@ export function ruleSegment(ep: Pick<Episode, "cast" | "fps">, alignment: Alignm
         }
         // năm có kỷ nguyên đi kèm ("753 BC to 476 AD") → gộp cả khoảng
         const range = /^(to|until|–|-)$/i.test(words[i + 2]?.text ?? "") ? words.slice(i, i + 5).map((w) => w.text.replace(/[.,!?]$/, "")).join(" ") : null;
-        if (isYear) overlays.push({ text: range ?? `${raw} ${era === "BC" || era === "AD" ? era : "AD"}`, style: "banner", at_word: i });
+        if (isYear && range) overlays.push({ text: range.replace(/\s+(to|until|–|-)\s+/i, "|"), style: "timeline", at_word: i });
+        else if (isYear) overlays.push({ text: `${raw} ${era === "BC" || era === "AD" ? era : "AD"}`, style: "banner", at_word: i });
         else overlays.push({ text: `${raw} ${tail.join(" ")}`.trim().toUpperCase(), style: "counter", at_word: i });
         break;
       }
@@ -233,6 +238,40 @@ export function ruleSegment(ep: Pick<Episode, "cast" | "fps">, alignment: Alignm
     if (/\b(retired|retire)\b/i.test(text)) overlays.push({ text: "RETIRED!", style: "stamp", at_word: u.to });
     if (beat === "cta" && !overlays.length) overlays.push({ text: "FOLLOW FOR MORE!", style: "title", at_word: u.from });
 
+    // ── Hành động theo từ khóa (luật offline) ──
+    const actions: Scene["actions"] = [];
+    const props: Scene["props"] = [];
+    const wordIdx = (re: RegExp) => {
+      for (let i = u.from; i <= u.to; i++) if (re.test(words[i].text)) return i;
+      return -1;
+    };
+    const lead0 = chars[0];
+    const named0 = ment.filter((c) => !c.generator).map((c) => c.id);
+    const victim = (named0.length ? chars.find((c) => c.character === named0[named0.length - 1]) : null) ?? lead0;
+    const iMove = wordIdx(/^(march|marches|marched|walks?|goes|went|comes?|came|arrives?|enters?|tiến|đi)/i);
+    if (iMove >= 0 && lead0 && !isMap && lead0.mark !== "A") actions.push({ target: lead0.character, verb: "enter", value: chars.length > 1 ? "right" : "left", at_word: iMove, delay: 0, duration: 1.3, to: null });
+    const iFall = wordIdx(/^(executed|dies|died|killed|falls?|fell|caught|chết|ngã|bị)/i);
+    if (iFall >= 0 && victim && !isMap) actions.push({ target: victim.character, verb: "fall", at_word: iFall, delay: 0.2, duration: 0.6, to: null, value: null });
+    const iJoy = wordIdx(/^(celebrat|cheer|happy|wins?|won|vui|thắng)/i);
+    if (iJoy >= 0 && lead0) actions.push({ target: lead0.character, verb: "hop", at_word: iJoy, delay: 0, duration: 1.2, to: null, value: null });
+    const iScared = wordIdx(/^(scared|afraid|shock|panic|sợ|hoảng)/i);
+    if (iScared >= 0 && lead0) actions.push({ target: lead0.character, verb: "shake", at_word: iScared, delay: 0, duration: 0.8, to: null, value: null });
+    const iYou = wordIdx(/^(you\??|you're|this|that|mày|nhóc)/i);
+    if (iYou >= 0 && chars.length >= 2) actions.push({ target: chars[1].character, verb: "point_at", to: chars[0].character, at_word: iYou, delay: 0, duration: 1.2, value: null });
+    const iGold = wordIdx(/^(gold|coins?|money|pension|treasure|vàng|tiền)/i);
+    if (iGold >= 0 && !isMap) {
+      props.push({ module: "coin_pile", x: 790, y: 1700, scale: 0.9, rot: 0, flip: false });
+      actions.push({ target: "prop:coin_pile", verb: "drop", at_word: iGold, delay: 0, duration: 1, to: null, value: null });
+    }
+    if (chars.length >= 2 && !actions.some((a) => a.target === chars[1].character)) actions.push({ target: chars[1].character, verb: "look", to: chars[0].character, at_word: u.from, delay: 0.3, duration: 0.3, value: null });
+    // bản đồ + động từ di chuyển → vẽ đường đi tới thành phố được nhắc
+    if (isMap) {
+      const labels = (lib.settings.get(setting)?.layers ?? []).flatMap((l) => l.items).filter((i) => i.module.startsWith("label:")).map((i) => i.module.slice(6));
+      const dest = labels.find((l) => new RegExp(`\\b${l}`, "i").test(text));
+      const from = labels.find((l) => l !== dest);
+      if (dest && from) overlays.push({ text: `${from} > ${dest}`, style: "route", at_word: Math.max(u.from, iMove) });
+    }
+
     const weather = /gold|coins|pension/i.test(text) ? "coins" : setting === "throne_room" ? "sparkles" : beat === "climax" ? "embers" : setting === "army_camp" ? "dust" : setting === "seaside_villa" ? "leaves" : "clear";
     out.push(
       SceneSchema.parse({
@@ -246,6 +285,8 @@ export function ruleSegment(ep: Pick<Episode, "cast" | "fps">, alignment: Alignm
         background: { setting, weather, lighting: beat === "climax" && !isMap ? "dramatic" : "auto" },
         camera: { shot, move, focus: "auto" },
         characters: chars,
+        props,
+        actions,
         overlays,
         transition: newSetting && k > 0 ? "whip" : "cut",
         seed: hash("scene", k) % 10000,
@@ -272,6 +313,11 @@ export const LlmScene = z.object({
     .array(z.object({ character: z.string(), mark: z.string().default("A"), pose: z.string().default("stand"), expression: z.string().default("neutral"), speaking: z.boolean().default(false), flip: z.boolean().default(false) }))
     .default([]),
   overlays: z.array(z.object({ text: z.string(), style: z.enum(OVERLAY_STYLES).catch("title"), at_word: z.number().int().nullable().default(null) })).default([]),
+  props: z.array(z.object({ module: z.string(), x: z.number().catch(760), y: z.number().catch(1650), scale: z.number().catch(1) })).catch([]).default([]),
+  actions: z
+    .array(z.object({ target: z.string(), verb: z.string(), at_word: z.number().int().nullable().catch(null).default(null), duration: z.number().catch(0.8).default(0.8), to: z.string().nullable().catch(null).default(null), value: z.string().nullable().catch(null).default(null) }))
+    .catch([])
+    .default([]),
   transition: z.enum(TRANSITIONS).catch("cut"),
   missing_module: z.string().nullable().optional(),
 });
@@ -280,7 +326,10 @@ export type LlmResult = z.infer<typeof LlmResult>;
 
 export function buildSegmentPrompt(words: Word[], lib: { settings: Map<string, SettingSpec>; characters: Map<string, CharacterSpec> }, poses: string[], expressions: string[]) {
   const indexed = words.map((w, i) => `${i}:${w.text}[${w.start.toFixed(2)}]`).join(" ");
-  const settings = [...lib.settings.values()].map((s) => `- ${s.id} (${s.name}; marks ${Object.keys(s.marks).join("/")}; tags: ${s.tags.slice(0, 6).join(", ")})`).join("\n");
+  const props = PROP_MODULES;
+  const settings = [...lib.settings.values()]
+    .map((s) => `- ${s.id} (${s.name}; marks ${Object.keys(s.marks).join("/")} — A giữa, B trái, C phải ở hậu cảnh, D/E tiền cảnh to hơn${s.seats.length ? `; CHỖ NGỒI: ${s.seats.join("/")} (pose sit chỉ dùng ở đây)` : "; không có chỗ ngồi"}; tags: ${s.tags.slice(0, 6).join(", ")})`)
+    .join("\n");
   const chars = [...lib.characters.values()].map((c) => `- ${c.id}: ${c.name}${c.generator ? " (nhân vật phụ, dùng cho đám đông)" : ""}; alias: ${c.aliases.join(", ")}`).join("\n");
   const system = `Bạn là đạo diễn phân cảnh cho video ngắn hoạt hình chibi dọc 9:16 (YouTube Shorts/TikTok).
 Nhiệm vụ: chia lời dẫn thành các cảnh liên tiếp phủ kín mọi từ, mỗi cảnh 1.2–4.2 giây, cắt ở ranh giới ý nghĩa; chọn tham số cảnh CHỈ từ thư viện được cung cấp.
@@ -299,11 +348,14 @@ NÉT MẶT: ${expressions.join(", ")}
 NHỊP KỂ (beat): ${BEATS.join(", ")}
 CAMERA shot: ${SHOTS.join(", ")} · move: ${MOVES.join(", ")}
 THỜI TIẾT: ${WEATHERS.join(", ")} · ÁNH SÁNG: ${LIGHTINGS.join(", ")}
-OVERLAY style: ${OVERLAY_STYLES.join(", ")} (banner = bảng treo cho năm/ngày; counter = số chạy; stamp = dấu mộc; title = chữ lớn; label = nhãn nhỏ)
+OVERLAY style: ${OVERLAY_STYLES.join(", ")} (banner = bảng treo cho năm/ngày; counter = số chạy; stamp = dấu mộc; title = chữ lớn; label = nhãn nhỏ; chart = biểu đồ cột, text "Tên:số; Tên:số"; timeline = trục thời gian, text "753 BC|476 AD"; route = đường đi trên bản đồ, text "Roma > Ravenna" theo nhãn có trên bản đồ; versus = đối đầu, text "A VS B")
+ĐẠO CỤ (props, module): ${props.join(", ")} — tọa độ thiết kế 1080×1920, đáy giữa vật; mặt đất y≈1300–1700.
+HÀNH ĐỘNG (actions) — làm cảnh "diễn" chứ không đứng yên: target = id nhân vật trong cảnh ("romulus", lần xuất hiện thứ 2 là "romulus#2") hoặc "prop:<module>"; verb ∈ ${VERBS.join(", ")}; at_word = index từ bắt đầu hành động (trong cảnh); duration giây; to = mark đích (move) / id nhân vật (approach, look, point_at); value = tư thế (pose), nét mặt (emote), "left"/"right" (enter/exit), hệ số (grow/shrink).
+  Ví dụ: {"target":"odoacer","verb":"enter","value":"right","at_word":42,"duration":1.4}, {"target":"orestes","verb":"fall","at_word":57,"duration":0.6}, {"target":"prop:coin_pile","verb":"drop","at_word":88,"duration":1}.
 CHUYỂN CẢNH: ${TRANSITIONS.join(", ")}
 
-Mỗi phần tử scenes gồm: word_start, word_end (index từ, liên tục, cảnh sau bắt đầu = word_end cảnh trước + 1, cảnh đầu = 0, cảnh cuối = ${words.length - 1}), beat, narration_vi (dịch tiếng Việt tự nhiên), description (mô tả hình ảnh 1 câu tiếng Việt), setting, weather, lighting, shot, move, characters [{character, mark, pose, expression, speaking, flip}], overlays [{text, style, at_word}], transition, missing_module (tên đạo cụ còn thiếu trong thư viện nếu có, ngược lại null).
-Quy tắc: cảnh đầu phải là hook mạnh; giữ nhân vật chính xuyên suốt; mark khác nhau cho các nhân vật trong cùng cảnh; overlay ngắn (≤ 5 từ) và at_word là index từ được nhắc tới; đổi bối cảnh dùng transition "whip".`;
+Mỗi phần tử scenes gồm: word_start, word_end (index từ, liên tục, cảnh sau bắt đầu = word_end cảnh trước + 1, cảnh đầu = 0, cảnh cuối = ${words.length - 1}), beat, narration_vi (dịch tiếng Việt tự nhiên), description (mô tả hình ảnh 1 câu tiếng Việt), setting, weather, lighting, shot, move, characters [{character, mark, pose, expression, speaking, flip}], overlays [{text, style, at_word}], props [{module, x, y, scale}], actions [{target, verb, at_word, duration, to, value}], transition, missing_module (tên đạo cụ còn thiếu trong thư viện nếu có, ngược lại null).
+Quy tắc: cảnh đầu phải là hook mạnh; giữ nhân vật chính xuyên suốt; mark khác nhau cho các nhân vật trong cùng cảnh; overlay ngắn (≤ 5 từ) và at_word là index từ được nhắc tới; đổi bối cảnh dùng transition "whip"; chỉ đưa nhân vật vào cảnh khi lời dẫn liên quan tới họ; chỉ thêm đạo cụ khi lời dẫn nhắc tới hoặc hành động cần; hầu hết cảnh có 1–3 hành động khớp đúng từ đang đọc (đi vào, chỉ tay, ngã, đồ vật rơi, đổi nét mặt…); dữ liệu/số liệu dùng chart, mốc thời gian dùng timeline, hành quân trên bản đồ dùng route.`;
   return { system, user };
 }
 
@@ -338,7 +390,34 @@ export function scenesFromLlm(res: LlmResult, alignment: Alignment, fps: number,
         return ok;
       })
       .map((c) => ({ ...c, pose: poses.includes(c.pose) ? c.pose : "stand", expression: expressions.includes(c.expression) ? c.expression : "neutral" }));
+    // "ngồi" ở chỗ không có ghế → chuyển vào ghế còn trống, nếu không thì đứng
+    const seats = lib.settings.get(setting)?.seats ?? [];
+    for (const c of characters) {
+      if (c.pose !== "sit" || seats.includes(c.mark)) continue;
+      const free = seats.find((m) => !characters.some((o) => o.mark === m));
+      if (free) c.mark = free;
+      else c.pose = "stand";
+    }
     const qa: Scene["qa_issues"] = s.missing_module ? [{ level: "info", message: `Gợi ý tạo module: ${s.missing_module}` }] : [];
+    const props = s.props.filter((p) => PROP_MODULES.includes(p.module)).slice(0, 6).map((p) => ({ module: p.module, x: Math.max(-100, Math.min(1180, p.x)), y: Math.max(300, Math.min(1900, p.y)), scale: Math.max(0.2, Math.min(3, p.scale)), rot: 0, flip: false }));
+    const marks = Object.keys(lib.settings.get(setting)?.marks ?? {});
+    const charIds = characters.map((c) => c.character);
+    const actions = s.actions.flatMap((a): Action[] => {
+      if (!(VERBS as readonly string[]).includes(a.verb)) return [];
+      const name = a.target.split("#")[0];
+      const ok = name.startsWith("prop:") ? props.some((p) => p.module === name.slice(5)) : charIds.includes(name);
+      if (!ok) return [];
+      const verb = a.verb as Verb;
+      let to = a.to;
+      if (verb === "move" && to && !marks.includes(to)) to = null;
+      if ((verb === "approach" || verb === "look" || verb === "point_at") && to && !charIds.includes(to.split("#")[0]) && !to.startsWith("prop:") && !marks.includes(to)) to = null;
+      let value = a.value;
+      if (verb === "pose" && !poses.includes(value ?? "")) return [];
+      if (verb === "emote" && !expressions.includes(value ?? "")) return [];
+      if ((verb === "enter" || verb === "exit") && value !== "left" && value !== "right") value = "right";
+      const at = a.at_word != null && a.at_word >= s.word_start && a.at_word <= s.word_end ? a.at_word : null;
+      return [{ target: a.target, verb, at_word: at, delay: 0, duration: Math.max(0.2, Math.min(4, a.duration)), to, value }];
+    });
     return SceneSchema.parse({
       id: `s${String(k + 1).padStart(3, "0")}`,
       beat: s.beat,
@@ -351,6 +430,8 @@ export function scenesFromLlm(res: LlmResult, alignment: Alignment, fps: number,
       background: { setting, weather: s.weather, lighting: s.lighting },
       camera: { shot: s.shot, move: s.move, focus: "auto" },
       characters,
+      props,
+      actions: actions.slice(0, 8),
       overlays: s.overlays.map((o) => ({ ...o, at_word: o.at_word != null && o.at_word >= s.word_start && o.at_word <= s.word_end ? o.at_word : null })),
       transition: s.transition,
       seed: hash("scene", k) % 10000,

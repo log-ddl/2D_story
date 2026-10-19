@@ -72,4 +72,11 @@ export const BUILTIN_CHARACTERS: CharacterSpec[] = [
     hand_prop: "shield",
     generator: true,
   }),
+  c({
+    id: "robot",
+    name: "Robot dẫn chuyện",
+    aliases: ["robot", "bot", "host", "người dẫn"],
+    kind: "svg",
+    rig: "robot_rig",
+  }),
 ];

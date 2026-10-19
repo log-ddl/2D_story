@@ -179,3 +179,9 @@ Khác với kế hoạch ban đầu:
 - Gọi Claude bằng SDK TypeScript ngay trong WebView (key lưu cục bộ), mặc định `claude-opus-5-5`.
 
 Việc tiếp theo nên làm: thử Claude với API key thật; nhép miệng theo viseme; tăng tốc xuất 1080p (gửi JPEG/WebCodecs thay frame thô); thêm bối cảnh/nhân vật ngoài La Mã; đóng gói `.app` có ký số.
+
+### Cập nhật 2026-10-19 (vòng 2)
+- Quy trình 5 bước: Kịch bản → Nhân vật & Bối cảnh → Phân cảnh → Tinh chỉnh → Xuất. Timeline chỉ còn ở bước Tinh chỉnh.
+- Bộ não chuyển từ API sang CLI (`claude` / `codex` / `agy`). Đã chạy thật với `agy`: đề xuất dàn + chia cảnh ~1–1.5 phút/lượt. `codex` chưa thử vì máy chưa cài.
+- Khung 9:16, 16:9, 1:1, 4:5: bối cảnh vẽ trong không gian dọc, khung ngang/vuông cắt quanh vùng quan tâm và giãn vị trí theo chiều ngang.
+- Phong cách: tông màu (ấm/lạnh/pastel/đen trắng/cổ điển) + 3 kiểu phụ đề.
