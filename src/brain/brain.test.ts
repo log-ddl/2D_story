@@ -102,6 +102,47 @@ describe("brain", () => {
     const p = await proposeCast(run, DEMO_SCRIPT, lib, "9:16");
     expect(p.settings[1].id).toBe("senate_hall");
   });
+
+  it("clear_base_items xóa vật thể ngoại lai (villa/cypress), lọc robot thừa và nhận new_modules", () => {
+    const customProposal = {
+      ...proposal,
+      characters: [
+        ...proposal.characters,
+        { ...proposal.characters[0], reuse_id: "robot", id: "robot", name: "Robot" },
+      ],
+      settings: [
+        {
+          reuse_id: null,
+          id: "bach_dang_river",
+          name: "Sông Bạch Đằng",
+          description: "Cửa sông",
+          based_on: "seaside_villa",
+          clear_base_items: true,
+          tags: ["river", "bạch đằng"],
+          backdrop_color: null,
+          ground_color: null,
+          base_lighting: "day",
+          extra_items: [{ module: "warship", x: 300, y: 1350, scale: 1, flip: false }, { module: "custom_banner", x: 820, y: 1420, scale: 1, flip: false }],
+        },
+      ],
+      new_modules: [
+        { id: "custom_banner", label: "Cờ đại vương", kind: "prop", visual: "Lá cờ thêu chữ Ngô" },
+      ],
+    };
+    const p = castSchema(lib).parse(customProposal);
+    const project = Project.parse({ id: "p", name: "Bạch Đằng" });
+    const ep = Episode.parse({ id: "e", title: "Bạch Đằng 938", script_text: "Năm 938 trên sông Bạch Đằng, Ngô Quyền đóng cọc gỗ đánh quân Nam Hán." });
+    const r = applyCast(p, project, ep, lib);
+    expect(r.episode.cast).not.toContain("robot");
+    expect(r.toDrawModules).toHaveLength(1);
+    expect(r.toDrawModules[0].id).toBe("custom_banner");
+    const river = r.project.settings[0];
+    const allMods = river.layers.flatMap((l) => l.items.map((i) => i.module));
+    expect(allMods).not.toContain("villa");
+    expect(allMods).not.toContain("cypress");
+    expect(allMods).toContain("warship");
+    expect(allMods).toContain("custom_banner");
+  });
 });
 
 describe("brief", () => {

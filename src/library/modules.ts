@@ -581,6 +581,100 @@ export const BUILTIN_MODULES: ModuleDef[] = [
       <path d="M200 200 Q380 150 540 170" fill="none" stroke="#b49a6a" stroke-width="5" stroke-dasharray="0"/>
     </g></svg>`,
   },
+  // ───────── Thủy chiến / Lịch sử Á Đông ─────────
+  {
+    id: "helmet_viet",
+    label: "Mũ tướng Việt",
+    kind: "headwear",
+    tags: ["helmet", "general", "vietnam", "mũ tướng", "vương", "ngô quyền"],
+    svg: `<svg viewBox="-130 -220 260 200" data-anchor="0 0"><g ${S}>
+      <path d="M-106 -52 Q-102 -152 0 -182 Q102 -152 106 -52 Z" fill="#c9a227"/>
+      <path d="M-118 -56 Q0 -84 118 -56 L112 -32 Q0 -58 -112 -32 Z" fill="#8f2024"/>
+      <path d="M-16 -180 L0 -214 L16 -180 Z" fill="#f2c14e"/>
+      <circle cx="0" cy="-64" r="14" fill="#e84a5f"/>
+      <path d="M-64 -144 Q-32 -106 -38 -56 M64 -144 Q32 -106 38 -56" fill="none" stroke-width="5"/>
+    </g></svg>`,
+  },
+  {
+    id: "hat_conical",
+    label: "Nón lá / nón quân sĩ",
+    kind: "headwear",
+    tags: ["hat", "conical", "vietnam", "soldier", "peasant", "nón", "quân sĩ"],
+    svg: `<svg viewBox="-150 -190 300 150" data-anchor="0 0"><g ${S}>
+      <path d="M-140 -52 L0 -174 L140 -52 Q0 -34 -140 -52 Z" fill="#e2cfa5"/>
+      <path d="M-92 -94 Q0 -82 92 -94 M-52 -130 Q0 -122 52 -130" fill="none" stroke="#b89c6a" stroke-width="5"/>
+      <circle cx="0" cy="-174" r="8" fill="#8a5a33"/>
+    </g></svg>`,
+  },
+  {
+    id: "bow",
+    label: "Cung tên",
+    kind: "hand",
+    tags: ["bow", "arrow", "weapon", "cung", "tên"],
+    svg: `<svg viewBox="-60 -160 120 320" data-anchor="0 0"><g ${S}>
+      <path d="M-14 -144 Q54 -72 54 0 Q54 72 -14 144" fill="none" stroke="#8a5a33" stroke-width="10"/>
+      <path d="M-14 -144 V144" fill="none" stroke="#d9d2c3" stroke-width="4"/>
+      <path d="M-36 0 H46" fill="none" stroke="#6b4226" stroke-width="6"/>
+      <path d="M46 0 L28 -10 V10 Z" fill="#dfe5ea"/>
+    </g></svg>`,
+  },
+  {
+    id: "warship",
+    label: "Chiến thuyền lớn",
+    kind: "prop",
+    tags: ["ship", "warship", "navy", "fleet", "thuyền", "chiến thuyền", "chiến hạm", "tàu"],
+    svg: `<svg viewBox="-420 -520 840 520"><g ${S}>
+      <path d="M-16 -120 V-496" fill="none" stroke="#6b4226" stroke-width="10"/>
+      <path d="M-210 -450 Q0 -488 210 -436 L178 -196 Q0 -236 -192 -196 Z" fill="#e8dcc2"/>
+      <path d="M-190 -376 H190 M-184 -290 H180" fill="none" stroke="#b89c6a" stroke-width="6"/>
+      <path d="M-16 -496 L96 -466 L-16 -436 Z" fill="#c8353d"/>
+      <path d="M-390 -132 Q-356 -226 -294 -210 L-252 -132 H258 L312 -234 Q368 -248 398 -144 L324 -16 Q0 18 -324 -16 Z" fill="#8a5a33"/>
+      <path d="M-318 -78 H318" fill="none" stroke="#c99a5b" stroke-width="8"/>
+      <circle cx="-196" cy="-78" r="24" fill="#c9a227"/>
+      <circle cx="-66" cy="-78" r="24" fill="#c9a227"/>
+      <circle cx="66" cy="-78" r="24" fill="#c9a227"/>
+      <circle cx="196" cy="-78" r="24" fill="#c9a227"/>
+      <path d="M-356 -12 Q-178 -36 0 -12 Q178 12 356 -12" fill="none" stroke="#69addb" stroke-width="8"/>
+    </g></svg>`,
+  },
+  {
+    id: "boat",
+    label: "Thuyền nhẹ",
+    kind: "prop",
+    tags: ["boat", "canoe", "river", "thuyền", "thuyền nhỏ", "thuyền nhẹ"],
+    svg: `<svg viewBox="-280 -190 560 190"><g ${S}>
+      <path d="M-266 -84 Q-210 -146 -162 -80 H162 Q210 -146 266 -84 L204 -12 Q0 14 -204 -12 Z" fill="#a06a3c"/>
+      <path d="M-192 -50 H192" fill="none" stroke="#cfa068" stroke-width="6"/>
+      <path d="M-30 -80 L-104 12 M60 -80 L-14 12" fill="none" stroke="#6b4226" stroke-width="9"/>
+      <path d="M-230 -8 Q-115 -26 0 -8 Q115 10 230 -8" fill="none" stroke="#69addb" stroke-width="7"/>
+    </g></svg>`,
+  },
+  {
+    id: "wooden_stakes",
+    label: "Bãi cọc gỗ bịt sắt",
+    kind: "prop",
+    tags: ["stakes", "trap", "river", "bach dang", "cọc", "cọc gỗ", "bãi cọc"],
+    svg: `<svg viewBox="-300 -310 600 310"><g ${S}>
+      <path d="M-236 0 L-216 -210 L-186 -286 L-156 -210 L-136 0 Z" fill="#8a5a33"/>
+      <path d="M-216 -210 L-186 -286 L-156 -210 Z" fill="#5b6876"/>
+      <path d="M-50 0 L-30 -236 L0 -304 L30 -236 L50 0 Z" fill="#9a663c"/>
+      <path d="M-30 -236 L0 -304 L30 -236 Z" fill="#5b6876"/>
+      <path d="M136 0 L156 -198 L186 -274 L216 -198 L236 0 Z" fill="#8a5a33"/>
+      <path d="M156 -198 L186 -274 L216 -198 Z" fill="#5b6876"/>
+    </g></svg>`,
+  },
+  {
+    id: "war_drum",
+    label: "Trống trận",
+    kind: "prop",
+    tags: ["drum", "war", "signal", "trống", "trống trận"],
+    svg: `<svg viewBox="-140 -240 280 240"><g ${S}>
+      <path d="M-96 0 L-60 -110 H-36 L-64 0 Z M96 0 L60 -110 H36 L64 0 Z" fill="#6b4226"/>
+      <circle cx="0" cy="-136" r="88" fill="#c8353d"/>
+      <circle cx="0" cy="-136" r="68" fill="#f5e6c4"/>
+      <circle cx="0" cy="-136" r="22" fill="#f2c14e"/>
+    </g></svg>`,
+  },
 ];
 
 /** Vị trí thành phố trên map_italy (tọa độ module, gốc ở anchor 500,625) */

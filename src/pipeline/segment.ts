@@ -4,10 +4,11 @@
 import { z } from "zod";
 import type { Alignment, Beat, CharacterSpec, Episode, Scene, SettingSpec, Word } from "../schema";
 import { Scene as SceneSchema, BEATS, SHOTS, MOVES, WEATHERS, LIGHTINGS, OVERLAY_STYLES, TRANSITIONS, VERBS, type Action, type Verb } from "../schema";
-import { BUILTIN_MODULES } from "../library/modules";
+import { BUILTIN_MODULES, type ModuleDef } from "../library/modules";
 
 /** Module dùng làm đạo cụ trong cảnh */
-const PROP_MODULES = BUILTIN_MODULES.filter((m) => m.kind === "prop" || m.kind === "hand").map((m) => m.id);
+const propModuleIds = (mods: ModuleDef[] = BUILTIN_MODULES) =>
+  mods.filter((m) => m.kind === "prop" || m.kind === "scenery" || m.kind === "hand").map((m) => m.id);
 import { hash } from "../engine/math";
 import { tokenize } from "./text";
 
@@ -324,9 +325,14 @@ export const LlmScene = z.object({
 export const LlmResult = z.object({ scenes: z.array(LlmScene).min(1) });
 export type LlmResult = z.infer<typeof LlmResult>;
 
-export function buildSegmentPrompt(words: Word[], lib: { settings: Map<string, SettingSpec>; characters: Map<string, CharacterSpec> }, poses: string[], expressions: string[]) {
+export function buildSegmentPrompt(
+  words: Word[],
+  lib: { settings: Map<string, SettingSpec>; characters: Map<string, CharacterSpec>; moduleDefs?: ModuleDef[] },
+  poses: string[],
+  expressions: string[],
+) {
   const indexed = words.map((w, i) => `${i}:${w.text}[${w.start.toFixed(2)}]`).join(" ");
-  const props = PROP_MODULES;
+  const props = propModuleIds(lib.moduleDefs);
   const settings = [...lib.settings.values()]
     .map((s) => `- ${s.id} (${s.name}; marks ${Object.keys(s.marks).join("/")} — A giữa, B trái, C phải ở hậu cảnh, D/E tiền cảnh to hơn${s.seats.length ? `; CHỖ NGỒI: ${s.seats.join("/")} (pose sit chỉ dùng ở đây)` : "; không có chỗ ngồi"}; tags: ${s.tags.slice(0, 6).join(", ")})`)
     .join("\n");
@@ -348,20 +354,29 @@ NÉT MẶT: ${expressions.join(", ")}
 NHỊP KỂ (beat): ${BEATS.join(", ")}
 CAMERA shot: ${SHOTS.join(", ")} · move: ${MOVES.join(", ")}
 THỜI TIẾT: ${WEATHERS.join(", ")} · ÁNH SÁNG: ${LIGHTINGS.join(", ")}
-OVERLAY style: ${OVERLAY_STYLES.join(", ")} (banner = bảng treo cho năm/ngày; counter = số chạy; stamp = dấu mộc; title = chữ lớn; label = nhãn nhỏ; chart = biểu đồ cột, text "Tên:số; Tên:số"; timeline = trục thời gian, text "753 BC|476 AD"; route = đường đi trên bản đồ, text "Roma > Ravenna" theo nhãn có trên bản đồ; versus = đối đầu, text "A VS B")
-ĐẠO CỤ (props, module): ${props.join(", ")} — tọa độ thiết kế 1080×1920, đáy giữa vật; mặt đất y≈1300–1700.
-HÀNH ĐỘNG (actions) — làm cảnh "diễn" chứ không đứng yên: target = id nhân vật trong cảnh ("romulus", lần xuất hiện thứ 2 là "romulus#2") hoặc "prop:<module>"; verb ∈ ${VERBS.join(", ")}; at_word = index từ bắt đầu hành động (trong cảnh); duration giây; to = mark đích (move) / id nhân vật (approach, look, point_at); value = tư thế (pose), nét mặt (emote), "left"/"right" (enter/exit), hệ số (grow/shrink).
-  Ví dụ: {"target":"odoacer","verb":"enter","value":"right","at_word":42,"duration":1.4}, {"target":"orestes","verb":"fall","at_word":57,"duration":0.6}, {"target":"prop:coin_pile","verb":"drop","at_word":88,"duration":1}.
+OVERLAY style: ${OVERLAY_STYLES.join(", ")} (banner = bảng treo cho năm/ngày/khẩu hiệu; counter = số chạy; stamp = dấu mộc; title = chữ lớn; label = nhãn nhỏ; chart = biểu đồ cột, text "Tên:số; Tên:số"; timeline = trục thời gian, text "753 BC|476 AD"; route = đường đi trên bản đồ CHỈ dùng khi setting là bản đồ có nhãn thành phố, còn khẩu hiệu mũi tên dùng banner; versus = đối đầu, text "A VS B")
+ĐẠO CỤ (props, module): ${props.join(", ")} — tọa độ thiết kế 1080×1920, đáy giữa vật; mặt đất/mặt nước y≈1300–1650.
+HÀNH ĐỘNG (actions) — làm cảnh "diễn" sống động theo đúng lời dẫn chứ KHÔNG đứng yên: target = id nhân vật trong cảnh ("romulus", lần xuất hiện thứ 2 là "romulus#2") hoặc "prop:<module>"; verb ∈ ${VERBS.join(", ")}; at_word = index từ bắt đầu hành động (trong cảnh); duration giây; to = mark đích A..E hoặc tọa độ "x,y" (cho move của đạo cụ) / id nhân vật (approach, look, point_at); value = tư thế (pose), nét mặt (emote), "left"/"right" (enter/exit), hệ số (grow/shrink).
+  - Đạo cụ (như thuyền warship/boat, bãi cọc wooden_stakes, xe car, đồ vật...) cũng DIỄN được: verb = "enter" (tiến vào từ "left"/"right"), "exit" (rút lui/bỏ chạy), "move" (to = "x,y" hoặc mark A..E), "rise" (nhô lên khỏi mặt nước/mặt đất), "fall" (nghiêng đổ/mắc cạn), "sink" (vỡ/chìm xuống), "shake" (rung chấn), "drop" (rơi từ trên xuống).
+  Ví dụ: {"target":"odoacer","verb":"enter","value":"right","at_word":42,"duration":1.4}, {"target":"prop:warship","verb":"enter","value":"right","at_word":12,"duration":1.6}, {"target":"prop:wooden_stakes","verb":"rise","at_word":45,"duration":1.0}, {"target":"prop:warship","verb":"sink","at_word":52,"duration":1.5}.
 CHUYỂN CẢNH: ${TRANSITIONS.join(", ")}
 
 Mỗi phần tử scenes gồm: word_start, word_end (index từ, liên tục, cảnh sau bắt đầu = word_end cảnh trước + 1, cảnh đầu = 0, cảnh cuối = ${words.length - 1}), beat, narration_vi (dịch tiếng Việt tự nhiên), description (mô tả hình ảnh 1 câu tiếng Việt), setting, weather, lighting, shot, move, characters [{character, mark, pose, expression, speaking, flip}], overlays [{text, style, at_word}], props [{module, x, y, scale}], actions [{target, verb, at_word, duration, to, value}], transition, missing_module (tên đạo cụ còn thiếu trong thư viện nếu có, ngược lại null).
-Quy tắc: cảnh đầu phải là hook mạnh; giữ nhân vật chính xuyên suốt; mark khác nhau cho các nhân vật trong cùng cảnh; overlay ngắn (≤ 5 từ) và at_word là index từ được nhắc tới; đổi bối cảnh dùng transition "whip"; chỉ đưa nhân vật vào cảnh khi lời dẫn liên quan tới họ; chỉ thêm đạo cụ khi lời dẫn nhắc tới hoặc hành động cần; hầu hết cảnh có 1–3 hành động khớp đúng từ đang đọc (đi vào, chỉ tay, ngã, đồ vật rơi, đổi nét mặt…); dữ liệu/số liệu dùng chart, mốc thời gian dùng timeline, hành quân trên bản đồ dùng route.`;
+Quy tắc: cảnh đầu phải là hook mạnh; giữ nhân vật chính xuyên suốt; mark khác nhau cho các nhân vật trong cùng cảnh; overlay ngắn (≤ 5 từ) và at_word là index từ được nhắc tới; đổi bối cảnh dùng transition "whip"; chỉ đưa nhân vật vào cảnh khi lời dẫn liên quan tới họ; khi lời dẫn tả vật thể/chiến thuyền/bãi cọc/vũ khí thì BẮT BUỘC đặt props tương ứng và gắn actions cho cả nhân vật lẫn prop:<module>; dữ liệu/số liệu dùng chart, mốc thời gian dùng timeline.`;
   return { system, user };
 }
 
 /** Chuẩn hóa kết quả LLM: phủ kín từ, sửa id không tồn tại, tính thời gian */
-export function scenesFromLlm(res: LlmResult, alignment: Alignment, fps: number, lib: { settings: Map<string, SettingSpec>; characters: Map<string, CharacterSpec> }, poses: string[], expressions: string[]): { scenes: Scene[]; warnings: string[] } {
+export function scenesFromLlm(
+  res: LlmResult,
+  alignment: Alignment,
+  fps: number,
+  lib: { settings: Map<string, SettingSpec>; characters: Map<string, CharacterSpec>; moduleDefs?: ModuleDef[] },
+  poses: string[],
+  expressions: string[],
+): { scenes: Scene[]; warnings: string[] } {
   const warnings: string[] = [];
+  const allowedProps = propModuleIds(lib.moduleDefs);
   const words = alignment.words;
   const n = words.length;
   const raw = [...res.scenes].sort((a, b) => a.word_start - b.word_start);
@@ -399,17 +414,21 @@ export function scenesFromLlm(res: LlmResult, alignment: Alignment, fps: number,
       else c.pose = "stand";
     }
     const qa: Scene["qa_issues"] = s.missing_module ? [{ level: "info", message: `Gợi ý tạo module: ${s.missing_module}` }] : [];
-    const props = s.props.filter((p) => PROP_MODULES.includes(p.module)).slice(0, 6).map((p) => ({ module: p.module, x: Math.max(-100, Math.min(1180, p.x)), y: Math.max(300, Math.min(1900, p.y)), scale: Math.max(0.2, Math.min(3, p.scale)), rot: 0, flip: false }));
+    const props = s.props.filter((p) => allowedProps.includes(p.module)).slice(0, 6).map((p) => ({ module: p.module, x: Math.max(-100, Math.min(1180, p.x)), y: Math.max(300, Math.min(1900, p.y)), scale: Math.max(0.2, Math.min(3, p.scale)), rot: 0, flip: false }));
     const marks = Object.keys(lib.settings.get(setting)?.marks ?? {});
     const charIds = characters.map((c) => c.character);
     const actions = s.actions.flatMap((a): Action[] => {
       if (!(VERBS as readonly string[]).includes(a.verb)) return [];
       const name = a.target.split("#")[0];
-      const ok = name.startsWith("prop:") ? props.some((p) => p.module === name.slice(5)) : charIds.includes(name);
+      const isProp = name.startsWith("prop:");
+      const ok = isProp ? props.some((p) => p.module === name.slice(5)) : charIds.includes(name);
       if (!ok) return [];
       const verb = a.verb as Verb;
       let to = a.to;
-      if (verb === "move" && to && !marks.includes(to)) to = null;
+      if (verb === "move" && to && !marks.includes(to)) {
+        const isCoord = isProp && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(to);
+        if (!isCoord) to = null;
+      }
       if ((verb === "approach" || verb === "look" || verb === "point_at") && to && !charIds.includes(to.split("#")[0]) && !to.startsWith("prop:") && !marks.includes(to)) to = null;
       let value = a.value;
       if (verb === "pose" && !poses.includes(value ?? "")) return [];

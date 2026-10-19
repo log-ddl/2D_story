@@ -17,7 +17,7 @@ export class Library {
   constructor(project?: Pick<Project, "modules" | "settings" | "characters"> | null) {
     const projMods: ModuleDef[] = (project?.modules ?? [])
       .filter((m) => m.status === "approved")
-      .map((m) => ({ id: m.id, label: m.id, kind: m.kind, tags: m.tags, svg: m.svg }));
+      .map((m) => ({ id: m.id, label: m.label || m.id, kind: m.kind, tags: m.tags, svg: m.svg }));
     const ids = new Set(projMods.map((m) => m.id));
     this.moduleDefs = [...BUILTIN_MODULES.filter((m) => !ids.has(m.id)), ...projMods];
     for (const m of project?.modules ?? []) {

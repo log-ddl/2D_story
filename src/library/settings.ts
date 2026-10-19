@@ -350,6 +350,93 @@ const RAW: SettingInput[] = [
     marks: marks5(1520),
     text_zone: { x: 540, y: 480 },
   },
+  {
+    id: "river_estuary",
+    name: "Cửa sông / mặt nước rộng",
+    tags: ["river", "sea", "water", "estuary", "navy", "fleet", "sông", "cửa sông", "bạch đằng", "thủy chiến", "biển"],
+    base_lighting: "day",
+    layers: [
+      {
+        depth: 0.25,
+        sky: ["#8cccf2", "#fdf0d5"],
+        procedural: [{ type: "clouds", count: 3 }],
+        items: [{ module: "sun", x: 840, y: 360, scale: 1.05, flip: false, rot: 0 }],
+      },
+      {
+        depth: 0.45,
+        procedural: [{ type: "mountains", count: 5, y: 1120, color: "#5d8277", color2: "#486b62" }],
+        items: [],
+      },
+      {
+        depth: 0.7,
+        ground: { y: 1120, color: "#2b6cb0", edge: "#215387" },
+        procedural: [{ type: "waves", count: 14, color: "#68b5dc", area: [0, 1140, 1080, 1460] }],
+        items: [],
+      },
+      {
+        depth: 0.88,
+        ground: { y: 1440, color: "#23568f", edge: "#1b4473" },
+        procedural: [{ type: "waves", count: 12, color: "#5aa3d0", area: [0, 1460, 1080, 1820] }],
+        items: [
+          { module: "rock", x: 70, y: 1620, scale: 1.15, flip: false, rot: 0 },
+          { module: "rock", x: 1010, y: 1640, scale: 1.05, flip: true, rot: 0 },
+        ],
+      },
+    ],
+    marks: {
+      A: { x: 540, y: 1460, scale: 1.2 },
+      B: { x: 240, y: 1500, scale: 1.22 },
+      C: { x: 840, y: 1500, scale: 1.22 },
+      D: { x: 330, y: 1580, scale: 1.32 },
+      E: { x: 750, y: 1580, scale: 1.32 },
+    },
+    text_zone: { x: 540, y: 400 },
+  },
+  {
+    id: "river_stakes",
+    name: "Lòng sông / trận địa cọc",
+    tags: ["river", "stakes", "ambush", "trap", "battle", "bạch đằng", "bãi cọc", "cọc gỗ", "sông", "thủy chiến"],
+    base_lighting: "dusk",
+    layers: [
+      {
+        depth: 0.25,
+        sky: ["#e88d5a", "#fce1b6"],
+        procedural: [{ type: "clouds", count: 3 }],
+        items: [],
+      },
+      {
+        depth: 0.45,
+        procedural: [{ type: "mountains", count: 6, y: 1120, color: "#4e6766", color2: "#3b5252" }],
+        items: [],
+      },
+      {
+        depth: 0.75,
+        ground: { y: 1120, color: "#265985", edge: "#1d4567" },
+        procedural: [{ type: "waves", count: 16, color: "#5ca6ce", area: [0, 1140, 1080, 1480] }],
+        items: [
+          { module: "wooden_stakes", x: 250, y: 1420, scale: 0.85, flip: false, rot: 0 },
+          { module: "wooden_stakes", x: 830, y: 1430, scale: 0.9, flip: true, rot: 0 },
+        ],
+      },
+      {
+        depth: 0.9,
+        ground: { y: 1460, color: "#1d466b", edge: "#153552" },
+        procedural: [{ type: "waves", count: 14, color: "#4d94bd", area: [0, 1480, 1080, 1820] }],
+        items: [
+          { module: "rock", x: 70, y: 1640, scale: 1.2, flip: false, rot: 0 },
+          { module: "rock", x: 1010, y: 1650, scale: 1.1, flip: true, rot: 0 },
+        ],
+      },
+    ],
+    marks: {
+      A: { x: 540, y: 1460, scale: 1.2 },
+      B: { x: 240, y: 1500, scale: 1.22 },
+      C: { x: 840, y: 1500, scale: 1.22 },
+      D: { x: 330, y: 1580, scale: 1.32 },
+      E: { x: 750, y: 1580, scale: 1.32 },
+    },
+    text_zone: { x: 540, y: 380 },
+  },
 ];
 
 export const BUILTIN_SETTINGS: SettingSpec[] = RAW.map((s) => SettingSpec.parse(s));

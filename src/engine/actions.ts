@@ -118,7 +118,7 @@ export function evalActors(scene: Scene, bases: ActorBase[], u: number, words: W
             if (r?.kind === "char" && bases[r.idx]) {
               const o = bases[r.idx];
               const side = o.x >= st.x ? -1 : 1;
-              [tx, ty, ts] = [o.x + side * 170 * o.scale, o.y + 6, o.scale];
+              [tx, ty, ts] = [o.x + side * 240 * o.scale, o.y + 6, o.scale];
             }
           } else if (a.verb === "enter") {
             [tx, ty] = [b.x, b.y];
@@ -154,8 +154,8 @@ export function evalActors(scene: Scene, bases: ActorBase[], u: number, words: W
           if (p < 1) st.x += Math.sin((u - start) * 70) * 7 * (1 - p);
           break;
         case "fall":
-          st.rot = (st.flip ? -1 : 1) * 88 * DEG * ease.outQuad(p);
-          st.dy += 10 * e;
+          st.rot = (st.flip ? 1 : -1) * 82 * DEG * ease.outQuad(p);
+          st.dy -= 45 * e;
           break;
         case "rise":
           st.rot = lerp(st.rot, 0, e);
@@ -201,6 +201,11 @@ export function evalActors(scene: Scene, bases: ActorBase[], u: number, words: W
           st.alpha = 1;
           break;
         }
+        case "sink":
+          st.dy += 220 * ease.inCubic(p);
+          st.rot += (st.flip ? -1 : 1) * 0.35 * e;
+          st.alpha = Math.min(st.alpha, 1 - ease.inCubic(clamp((p - 0.2) / 0.8)));
+          break;
       }
     }
     if (st.walking) st.pose = { ...POSES.walk.pose, head: st.pose.head };
@@ -208,7 +213,7 @@ export function evalActors(scene: Scene, bases: ActorBase[], u: number, words: W
   });
 }
 
-export function evalProps(scene: Scene, u: number, words: Word[], f: Frame): PropState[] {
+export function evalProps(scene: Scene, u: number, words: Word[], f: Frame, setting?: SettingSpec): PropState[] {
   const acts = scene.actions
     .map((a) => ({ a, ref: resolveTarget(scene, a.target), start: actionStart(a, scene, words) }))
     .filter((x) => x.ref?.kind === "prop")
@@ -216,16 +221,51 @@ export function evalProps(scene: Scene, u: number, words: Word[], f: Frame): Pro
   return scene.props.map((pr, idx) => {
     const mine = acts.filter((x) => x.ref!.idx === idx);
     const st: PropState = { x: spreadX(f, pr.x), y: pr.y, scale: pr.scale, rot: pr.rot, alpha: 1 };
-    if (mine[0] && ["drop", "fade_in", "grow"].includes(mine[0].a.verb)) st.alpha = 0;
+    if (mine[0] && ["drop", "fade_in", "grow", "enter", "rise"].includes(mine[0].a.verb)) st.alpha = 0;
     for (const { a, start } of mine) {
       if (u < start) break;
       const p = clamp((u - start) / Math.max(0.05, a.duration));
       const e = ease.inOutCubic(p);
       switch (a.verb) {
+        case "enter": {
+          const side = a.value === "left" || a.value === "right" ? a.value : pr.x < 540 ? "left" : "right";
+          const off = offscreenX(f, side);
+          st.alpha = clamp(p * 3);
+          st.x = lerp(off, st.x, ease.outCubic(p));
+          if (p < 1) st.y += Math.sin(p * Math.PI * 3) * 10;
+          break;
+        }
+        case "exit": {
+          const side =
+            a.value === "left" || a.value === "right"
+              ? a.value
+              : a.to === "left" || a.to === "right"
+                ? a.to
+                : pr.x < 540
+                  ? "left"
+                  : "right";
+          const off = offscreenX(f, side);
+          st.x = lerp(st.x, off, ease.inCubic(p));
+          st.alpha = Math.min(st.alpha, 1 - clamp((p - 0.65) / 0.35));
+          break;
+        }
         case "drop":
           st.alpha = 1;
           st.y -= (1 - bounce(p)) * 1000;
           st.rot += (1 - p) * 0.4;
+          break;
+        case "rise":
+          st.alpha = Math.max(st.alpha, clamp(p * 2.5));
+          st.y += (1 - ease.outBack(p)) * 180;
+          break;
+        case "fall":
+          st.rot += (pr.flip ? -1 : 1) * 0.45 * bounce(p);
+          st.y += 45 * e;
+          break;
+        case "sink":
+          st.rot += (pr.flip ? -1 : 1) * 0.55 * e;
+          st.y += 220 * ease.inCubic(p);
+          st.alpha = Math.min(st.alpha, 1 - ease.inCubic(clamp((p - 0.25) / 0.75)));
           break;
         case "fade_in":
           st.alpha = e;
@@ -251,11 +291,17 @@ export function evalProps(scene: Scene, u: number, words: Word[], f: Frame): Pro
           if (p < 1) st.y -= Math.abs(Math.sin(Math.PI * p * (a.verb === "hop" ? 4 : 1))) * 80;
           break;
         case "move": {
-          // đạo cụ: to = "x,y" (thiết kế)
-          const [tx, ty] = (a.to ?? "").split(",").map(Number);
-          if (Number.isFinite(tx) && Number.isFinite(ty)) {
-            st.x = lerp(st.x, spreadX(f, tx), e);
-            st.y = lerp(st.y, ty, e);
+          if (a.to && setting?.marks[a.to]) {
+            const m = markPos(setting, a.to, f);
+            st.x = lerp(st.x, m.x, e);
+            st.y = lerp(st.y, m.y, e);
+          } else {
+            // đạo cụ: to = "x,y" (thiết kế)
+            const [tx, ty] = (a.to ?? "").split(",").map(Number);
+            if (Number.isFinite(tx) && Number.isFinite(ty)) {
+              st.x = lerp(st.x, spreadX(f, tx), e);
+              st.y = lerp(st.y, ty, e);
+            }
           }
           break;
         }

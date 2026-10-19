@@ -422,15 +422,46 @@ export const useStore = create<State>((set, get) => {
         if (method === "brain") {
           try {
             j.progress(0.4, `${brainName()} đang chia cảnh… (có thể mất 1–3 phút)`);
-            const res = scenesFromLlm(await segmentScenes(runner(), alignment.words, library, episode), alignment, episode.fps, scoped, Object.keys(POSES), Object.keys(EXPRESSIONS));
+            const llmRes = await segmentScenes(runner(), alignment.words, get().library, episode);
+            // Tự vẽ tối đa 3 đạo cụ còn thiếu được AI nhắc trong missing_module hoặc props
+            const existingIds = new Set(get().library.moduleDefs.map((m) => m.id));
+            const missingReqs = new Map<string, string>();
+            for (const s of llmRes.scenes) {
+              if (s.missing_module) {
+                const clean = s.missing_module.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+                if (clean && !existingIds.has(clean)) missingReqs.set(clean, s.missing_module);
+              }
+              for (const pr of s.props) {
+                const clean = pr.module.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+                if (clean && !existingIds.has(clean)) missingReqs.set(clean, pr.module);
+              }
+            }
+            let drawnCount = 0;
+            for (const [modId, desc] of [...missingReqs.entries()].slice(0, 3)) {
+              try {
+                j.progress(0.75, `Vẽ đạo cụ mới: ${modId}…`);
+                const svgRes = await drawModuleSvg(runner(), `${desc} (id: ${modId})`, "prop");
+                const ok = svgRes.errors.length === 0;
+                get().updateProject((p) => ({
+                  ...p,
+                  modules: [...p.modules.filter((m) => m.id !== modId), { id: modId, label: desc, svg: svgRes.svg, tags: svgRes.tags, status: ok ? "approved" : "draft", kind: "prop" }],
+                }));
+                if (ok) drawnCount++;
+              } catch {
+                // bỏ qua nếu lỗi vẽ 1 đạo cụ lẻ
+              }
+            }
+            const freshScoped = scopedLibrary(get().library, episode);
+            const res = scenesFromLlm(llmRes, alignment, episode.fps, freshScoped, Object.keys(POSES), Object.keys(EXPRESSIONS));
             scenes = res.scenes;
+            if (drawnCount) get().toast("ok", `Đã tự vẽ thêm ${drawnCount} đạo cụ SVG cho phân cảnh`);
             if (res.warnings.length) get().toast("warn", res.warnings.slice(0, 3).join(" · "));
           } catch (e) {
             get().toast("warn", `Bộ não lỗi (${(e as Error).message}) — dùng chia cảnh offline`);
             scenes = ruleSegment(episode, alignment, scoped);
           }
         } else scenes = ruleSegment(episode, alignment, scoped);
-        get().updateEpisode((e) => runQa({ ...e, alignment, scenes }, library));
+        get().updateEpisode((e) => runQa({ ...e, alignment, scenes }, get().library));
         set({ selected: scenes[0]?.id ?? null });
         j.done(`${scenes.length} cảnh · ${episodeDuration(get().episode!).toFixed(1)}s`);
         get().toast("ok", `Đã chia ${scenes.length} cảnh khớp giọng đọc`);
@@ -450,13 +481,30 @@ export const useStore = create<State>((set, get) => {
         const r = applyCast(proposal, project, episode, library);
         get().updateProject(() => r.project);
         get().updateEpisode(() => r.episode);
+        // tự vẽ các đạo cụ/cảnh vật đặc trưng được đề xuất trong new_modules
+        let drawnMods = 0;
+        for (const m of r.toDrawModules.slice(0, 5)) {
+          try {
+            j.progress(0.65, `Vẽ đạo cụ ${m.label} (${m.id})…`);
+            const svgRes = await drawModuleSvg(runner(), `${m.label}: ${m.visual}`, m.kind);
+            const ok = svgRes.errors.length === 0;
+            get().updateProject((p) => ({
+              ...p,
+              modules: [...p.modules.filter((x) => x.id !== m.id), { id: m.id, label: m.label, svg: svgRes.svg, tags: svgRes.tags, status: ok ? "approved" : "draft", kind: m.kind }],
+            }));
+            if (ok) drawnMods++;
+          } catch {
+            // tiếp tục nếu 1 module lỗi
+          }
+        }
         // nhân vật không dựng được bằng tham số (con vật, robot…) → bộ não vẽ SVG có khung xương
         for (const d of r.toDraw) {
-          j.progress(0.8, `Vẽ nhân vật ${d.id}…`);
+          j.progress(0.85, `Vẽ nhân vật ${d.id}…`);
           await get().generateCharacter(d.visual, d.id);
         }
-        j.done(`${r.episode.cast.length} nhân vật (${r.created.characters} mới) · ${r.episode.sets.length} bối cảnh (${r.created.settings} mới)`);
-        get().toast("ok", `Đề xuất xong: ${r.episode.cast.length} nhân vật, ${r.episode.sets.length} bối cảnh — xem và chỉnh trước khi chia cảnh`);
+        const modText = drawnMods ? ` · ${drawnMods} đạo cụ mới` : "";
+        j.done(`${r.episode.cast.length} nhân vật (${r.created.characters} mới) · ${r.episode.sets.length} bối cảnh (${r.created.settings} mới)${modText}`);
+        get().toast("ok", `Đề xuất xong: ${r.episode.cast.length} nhân vật, ${r.episode.sets.length} bối cảnh${modText} — xem và chỉnh trước khi chia cảnh`);
       } catch (e) {
         j.fail(e);
       }

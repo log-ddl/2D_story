@@ -70,6 +70,7 @@ export const ease = {
   inQuad: (t: number) => t * t,
   outQuad: (t: number) => t * (2 - t),
   inOutQuad: (t: number) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t),
+  inCubic: (t: number) => t * t * t,
   outCubic: (t: number) => 1 - Math.pow(1 - t, 3),
   inOutCubic: (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
   inOutSine: (t: number) => -(Math.cos(Math.PI * t) - 1) / 2,

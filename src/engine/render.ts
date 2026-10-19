@@ -240,7 +240,7 @@ function drawSceneWorld(ctx: Ctx, env: RenderEnv, scene: Scene, u: number, t: nu
   const focus = focusPoint(env, scene, f, u);
   const cam = cameraAt(scene, u, focus, f);
   const placed = placeCharacters(env, scene, f, u).sort((a, b) => a.y - b.y);
-  const props = evalProps(scene, u, wordsOf(env.episode), f);
+  const props = evalProps(scene, u, wordsOf(env.episode), f, setting);
   const lastLayer = setting.layers.length - 1;
   const talk = talkAt(env, scene, t);
 
@@ -267,46 +267,92 @@ function drawSceneWorld(ctx: Ctx, env: RenderEnv, scene: Scene, u: number, t: nu
     }
     if (li === lastLayer) {
       for (const o of scene.overlays) if (o.style === "route") drawRoute(ctx, o.text, setting, f, t - overlayStart(env, scene, o));
+      type DrawItem = { z: number; draw: () => void };
+      const drawables: DrawItem[] = [];
+      const vessels = scene.props
+        .map((pr, i) => ({ pr, ps: props[i], baseX: spreadX(f, pr.x) }))
+        .filter((v) => v.ps && (v.pr.module === "warship" || v.pr.module === "boat"));
+
       scene.props.forEach((pr, i) => {
         const m = lib.getModule(pr.module);
         const ps = props[i];
         if (!m || !ps) return;
-        withAlpha(ctx, env, ps.alpha, (c) => {
-          c.save();
-          c.translate(ps.x, ps.y);
-          c.rotate(ps.rot);
-          c.scale(pr.flip ? -ps.scale : ps.scale, ps.scale);
-          drawModule(c, m);
-          c.restore();
+        const zBias = pr.module === "wooden_stakes" ? 45 : pr.module === "warship" ? -15 : pr.module === "boat" ? 12 : 0;
+        drawables.push({
+          z: ps.y + zBias,
+          draw: () =>
+            withAlpha(ctx, env, ps.alpha, (c) => {
+              c.save();
+              c.translate(ps.x, ps.y);
+              c.rotate(ps.rot);
+              c.scale(pr.flip ? -ps.scale : ps.scale, ps.scale);
+              drawModule(c, m);
+              c.restore();
+            }),
         });
       });
+      const vesselMounts = new Map<number, (typeof vessels)[number]>();
+      const vesselCrew = new Map<(typeof vessels)[number], number[]>();
+      for (const p of placed) {
+        const mount = vessels
+          .map((v) => ({ v, dist: Math.abs(p.x - v.baseX) }))
+          .sort((a, b) => a.dist - b.dist)[0];
+        const onVessel = mount && mount.dist < 280 * f.spread ? mount.v : null;
+        if (onVessel) {
+          vesselMounts.set(p.idx, onVessel);
+          const list = vesselCrew.get(onVessel) ?? [];
+          list.push(p.idx);
+          vesselCrew.set(onVessel, list);
+        }
+      }
+
       for (const p of placed) {
         const pl = scene.characters[p.idx];
         const spec = lib.getCharacter(pl.character)!;
         const st = p.st;
-        withAlpha(ctx, env, st.alpha, (c) => {
-          c.save();
-          c.translate(p.x, p.y + st.dy);
-          if (st.rot) c.rotate(st.rot);
-          c.scale(p.flip ? -p.scale : p.scale, p.scale);
-          // điểm chỉ tay → hệ tọa độ cục bộ của nhân vật
-          const pointAt = st.pointAt ? { x: ((st.pointAt.x - p.x) / p.scale) * (p.flip ? -1 : 1), y: (st.pointAt.y - p.y - st.dy) / p.scale } : null;
-          drawCharacter(c, spec, {
-            pose: pl.pose,
-            poseOverride: st.pose,
-            expression: st.expression,
-            t,
-            u,
-            talk: pl.speaking ? talk.amount : 0,
-            viseme: talk.viseme,
-            lean: st.lean * (p.flip ? -1 : 1),
-            pointAt,
-            seed: hash(scene.seed, pl.character, p.idx),
-            getModule: lib.getModule,
-          });
-          c.restore();
+        // Nếu nhân vật đứng gần thuyền (warship/boat) → tự đặt đứng trên boong thuyền và di chuyển/nghiêng/chìm theo thuyền
+        const onVessel = vesselMounts.get(p.idx) ?? null;
+        const crew = onVessel ? (vesselCrew.get(onVessel) ?? [p.idx]) : [p.idx];
+        const slotIdx = crew.indexOf(p.idx);
+        const slotSpacing = (onVessel?.pr.module === "warship" ? 210 : 140) * (onVessel?.ps.scale ?? 1) * f.spread;
+        const slotOff = crew.length > 1 ? (slotIdx - (crew.length - 1) / 2) * slotSpacing : 0;
+        const deckOff = onVessel ? (onVessel.pr.module === "warship" ? -134 : -62) * onVessel.ps.scale : 0;
+        const drawX = onVessel
+          ? onVessel.ps.x + (crew.length > 1 ? slotOff : clamp(p.x - onVessel.baseX, -150 * onVessel.ps.scale, 150 * onVessel.ps.scale))
+          : p.x;
+        const drawY = onVessel ? onVessel.ps.y + deckOff + st.dy : p.y + st.dy;
+        const drawRot = st.rot + (onVessel ? onVessel.ps.rot * 0.75 : 0);
+        const drawAlpha = st.alpha * (onVessel ? onVessel.ps.alpha : 1);
+        const zPos = onVessel ? onVessel.ps.y + (spec.generator ? -1 : 1) : p.y + st.dy;
+        drawables.push({
+          z: zPos,
+          draw: () =>
+            withAlpha(ctx, env, drawAlpha, (c) => {
+              c.save();
+              c.translate(drawX, drawY);
+              if (drawRot) c.rotate(drawRot);
+              c.scale(p.flip ? -p.scale : p.scale, p.scale);
+              // điểm chỉ tay → hệ tọa độ cục bộ của nhân vật
+              const pointAt = st.pointAt ? { x: ((st.pointAt.x - drawX) / p.scale) * (p.flip ? -1 : 1), y: (st.pointAt.y - drawY) / p.scale } : null;
+              drawCharacter(c, spec, {
+                pose: pl.pose,
+                poseOverride: st.pose,
+                expression: st.expression,
+                t,
+                u,
+                talk: pl.speaking ? talk.amount : 0,
+                viseme: talk.viseme,
+                lean: st.lean * (p.flip ? -1 : 1),
+                pointAt,
+                seed: hash(scene.seed, pl.character, p.idx),
+                getModule: lib.getModule,
+              });
+              c.restore();
+            }),
         });
       }
+      drawables.sort((a, b) => a.z - b.z);
+      for (const d of drawables) d.draw();
     }
     ctx.restore();
   });
@@ -322,11 +368,12 @@ function drawSceneWorld(ctx: Ctx, env: RenderEnv, scene: Scene, u: number, t: nu
     zone.y = Math.max(zone.y, f.H * 0.13);
     let stack = 0;
     for (const o of scene.overlays) {
-      if (o.style === "route") continue;
+      if (o.style === "route" && routePoints(o.text, setting, f).length >= 2) continue;
       const at = overlayStart(env, scene, o);
       // nhiều chữ cùng vùng → xếp chồng xuống dưới để không đè nhau
       const slot = o.x == null && o.y == null ? stack++ : 0;
-      const mapped = o.x != null && o.y != null ? { ...o, ...dw(f, spreadX(f, o.x), o.y) } : o;
+      const base = o.style === "route" ? { ...o, style: "banner" as const, text: o.text.replace(/\s*(?:>|→|->|➔)\s*/g, " >> ") } : o;
+      const mapped = base.x != null && base.y != null ? { ...base, ...dw(f, spreadX(f, base.x), base.y) } : base;
       drawOverlay(ctx, mapped, t - at, slot ? { x: zone.x, y: zone.y + slot * Math.min(f.W, f.H) * 0.17 } : zone, scene.seed, f.W);
     }
   }
@@ -337,14 +384,9 @@ function overlayStart(env: RenderEnv, scene: Scene, o: Scene["overlays"][number]
   return o.at_word != null && words[o.at_word] ? words[o.at_word].start : scene.start + 0.1;
 }
 
-/**
- * Đường đi trên bản đồ: "Milano > Ravenna > Roma" nối các nhãn/điểm của bối cảnh.
- * Vẽ dần theo thời gian (nét đứt + mũi tên), trong hệ tọa độ thiết kế để bám theo camera.
- */
-function drawRoute(ctx: Ctx, text: string, setting: ReturnType<RenderEnv["library"]["getSetting"]>, f: Frame, age: number) {
-  if (age < 0) return;
+function routePoints(text: string, setting: ReturnType<RenderEnv["library"]["getSetting"]>, f: Frame) {
   const items = setting.layers.flatMap((l) => l.items);
-  const pts = text
+  return text
     .split(/>|→|->|,/)
     .map((n) => n.trim().toLowerCase())
     .filter(Boolean)
@@ -357,6 +399,15 @@ function drawRoute(ctx: Ctx, text: string, setting: ReturnType<RenderEnv["librar
       return { x: spreadX(f, p.x), y: p.y };
     })
     .filter((p): p is { x: number; y: number } => !!p);
+}
+
+/**
+ * Đường đi trên bản đồ: "Milano > Ravenna > Roma" nối các nhãn/điểm của bối cảnh.
+ * Vẽ dần theo thời gian (nét đứt + mũi tên), trong hệ tọa độ thiết kế để bám theo camera.
+ */
+function drawRoute(ctx: Ctx, text: string, setting: ReturnType<RenderEnv["library"]["getSetting"]>, f: Frame, age: number) {
+  if (age < 0) return;
+  const pts = routePoints(text, setting, f);
   if (pts.length < 2) return;
   const segs = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i].x, p.y - pts[i].y));
   const total = segs.reduce((a, b) => a + b, 0);

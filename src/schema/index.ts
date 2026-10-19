@@ -55,6 +55,7 @@ export const VERBS = [
   "fade_in",
   "fade_out",
   "drop", // (đạo cụ) rơi từ trên xuống và nảy
+  "sink", // (đạo cụ/nhân vật) chìm xuống dưới mặt nước/mặt đất
 ] as const;
 export type Verb = (typeof VERBS)[number];
 
@@ -245,7 +246,7 @@ export const Project = z.object({
   characters: z.array(CharacterSpec).default([]),
   /** Module SVG riêng của dự án (do AI sinh / người thêm) */
   modules: z
-    .array(z.object({ id: z.string(), svg: z.string(), tags: z.array(z.string()).default([]), status: z.enum(["draft", "approved"]).default("draft"), kind: z.enum(["prop", "scenery", "headwear", "hand", "rig", "map"]).default("prop"), anchor: z.tuple([z.number(), z.number()]).optional() }))
+    .array(z.object({ id: z.string(), label: z.string().optional(), svg: z.string(), tags: z.array(z.string()).default([]), status: z.enum(["draft", "approved"]).default("draft"), kind: z.enum(["prop", "scenery", "headwear", "hand", "rig", "map"]).default("prop"), anchor: z.tuple([z.number(), z.number()]).optional() }))
     .default([]),
   settings: z.array(SettingSpec).default([]),
 });

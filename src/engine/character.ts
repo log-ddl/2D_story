@@ -114,20 +114,24 @@ export function characterHeight(spec: CharacterSpec) {
 
 const SKINS = ["#f6c9a0", "#eab88f", "#d9a577", "#f3d1b0", "#c98f63"];
 const HAIRS = ["#3b2a1e", "#6b4226", "#c9a227", "#2a1f2e", "#8a4b2a", "#a0522d"];
+const DARK_HAIRS = ["#1a202c", "#2b2233", "#3b2a1e", "#2d241e"];
 const BEARDS = ["full", "mustache", "none", "goatee", "stubble", "full"];
+const LIGHT_BEARDS = ["none", "none", "none", "stubble", "mustache"];
 const SHIELDS = ["#c8553d", "#3d6fb6", "#3f8f5a", "#d9a441", "#7b4fa0"];
 
 export function variantSpec(spec: CharacterSpec, seed: number): CharacterSpec {
   if (!spec.generator) return spec;
   const r = rng(hash(spec.id, seed));
   const pick = <T,>(arr: T[]) => arr[Math.floor(r() * arr.length)];
-  const hair = pick(HAIRS);
+  const isAsianOrDark = spec.headwear === "hat_conical" || spec.headwear === "helmet_viet" || /^#(1|2|0)/.test(spec.hair.color);
+  const hair = pick(isAsianOrDark ? DARK_HAIRS : HAIRS);
+  const beardPool = spec.beard.style === "none" ? LIGHT_BEARDS : BEARDS;
   return {
     ...spec,
-    skin: pick(SKINS),
+    skin: isAsianOrDark ? spec.skin : pick(SKINS),
     build: pick(["slim", "normal", "stocky"] as const),
-    hair: { style: pick(["short", "curly", "short", "spiky"]), color: hair },
-    beard: { style: pick(BEARDS), color: hair },
+    hair: { style: pick(["short", "short", "spiky"]), color: hair },
+    beard: { style: pick(beardPool), color: hair },
     outfit: { ...spec.outfit, trim: pick(SHIELDS) },
   };
 }
@@ -317,11 +321,16 @@ export function drawCharacter(ctx: CanvasRenderingContext2D, rawSpec: CharacterS
     if (m) {
       ctx.save();
       ctx.translate(hand[0], hand[1]);
-      // Góc cẳng tay tính từ hướng "lên": tay buông → vũ khí dựng đứng,
-      // tay ngang → vũ khí chĩa theo tay, tay giơ → vũ khí theo tay lên trời.
+      // Góc cẳng tay tính từ hướng "lên": giới hạn góc nghiêng để giáo/kiếm không chĩa ngang 90° đâm vào mặt nhân vật cạnh bên.
       let phi = Math.atan2(hand[0] - fore[0], -(hand[1] - fore[1]));
       if (Math.abs(phi) > Math.PI / 2) phi = Math.sign(phi) * (Math.PI - Math.abs(phi));
-      ctx.rotate(spec.hand_prop === "shield" ? 0 : phi);
+      const rot =
+        spec.hand_prop === "shield"
+          ? 0
+          : spec.hand_prop === "spear" || spec.hand_prop === "staff"
+            ? clamp(phi * 0.22, -0.32, 0.32)
+            : clamp(phi * 0.55, -0.65, 0.65);
+      ctx.rotate(rot);
       ctx.scale(d.R / 100, d.R / 100);
       drawModule(ctx, m, { palette: { accent: spec.outfit.trim } });
       ctx.restore();

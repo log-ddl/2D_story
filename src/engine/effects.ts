@@ -193,18 +193,20 @@ export function drawProcedural(ctx: Ctx, p: Proc, layer: Layer, seed: number, t:
         ctx.lineWidth = 6;
         ctx.strokeStyle = OUTLINE;
         ctx.stroke();
-        // tuyết trên đỉnh
-        ctx.beginPath();
-        ctx.moveTo(x - w * 0.14, base - h * 0.72);
-        ctx.lineTo(x, base - h);
-        ctx.lineTo(x + w * 0.14, base - h * 0.72);
-        ctx.lineTo(x + w * 0.05, base - h * 0.78);
-        ctx.lineTo(x - w * 0.03, base - h * 0.7);
-        ctx.closePath();
-        ctx.fillStyle = "#ffffff";
-        ctx.fill();
-        ctx.lineWidth = 4;
-        ctx.stroke();
+        // chỉ vẽ tuyết trắng trên đỉnh với núi mặc định; núi có màu riêng (như núi đá vôi sông Bạch Đằng) không phủ tuyết
+        if (!p.color) {
+          ctx.beginPath();
+          ctx.moveTo(x - w * 0.14, base - h * 0.72);
+          ctx.lineTo(x, base - h);
+          ctx.lineTo(x + w * 0.14, base - h * 0.72);
+          ctx.lineTo(x + w * 0.05, base - h * 0.78);
+          ctx.lineTo(x - w * 0.03, base - h * 0.7);
+          ctx.closePath();
+          ctx.fillStyle = "#ffffff";
+          ctx.fill();
+          ctx.lineWidth = 4;
+          ctx.stroke();
+        }
       }
       break;
     }

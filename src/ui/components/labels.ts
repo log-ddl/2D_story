@@ -56,5 +56,6 @@ export const VERB_LABEL = {
   fade_in: "Hiện dần",
   fade_out: "Mờ dần",
   drop: "Rơi xuống (nảy)",
+  sink: "Chìm xuống",
 } as const;
 export const TRANSITION_LABEL = { cut: "Cắt", fade: "Mờ dần", whip: "Lia nhanh" } as const;
